@@ -1,0 +1,36 @@
+module pcl_dds_msgs {
+
+  @extensibility(APPENDABLE)
+  struct Time {
+    int32 sec;
+    uint32 nanosec;
+  };
+
+  @extensibility(APPENDABLE)
+  struct Header {
+    Time stamp;
+    string<256> frame_id;
+  };
+
+  @extensibility(APPENDABLE)
+  struct PointField {
+    string<128> name;
+    uint32 offset;
+    uint8 datatype;
+    uint32 count;
+  };
+
+  @extensibility(APPENDABLE)
+  struct PointCloud2 {
+    Header header;
+    uint32 height;
+    uint32 width;
+    sequence<PointField, 64> fields;
+    boolean is_bigendian;
+    uint32 point_step;
+    uint32 row_step;
+    sequence<uint8, 1048576> data;
+    boolean is_dense;
+  };
+
+};
