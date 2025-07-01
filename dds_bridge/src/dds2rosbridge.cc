@@ -30,11 +30,11 @@ private:
 
       sensor_msgs::msg::PointCloud2 ros_msg;
       ros_msg.header.stamp = this->now();
-      ros_msg.header.frame_id = "lidar";  // <-- Update if you use something else
-      ros_msg.height = 1;
+      ros_msg.header.frame_id = dds_msg.header().frame_id();  // <-- Update if you use something else
+      ros_msg.height = dds_msg.height();
       ros_msg.width = dds_msg.width();
       ros_msg.is_dense = dds_msg.is_dense();
-      ros_msg.is_bigendian = false;
+      ros_msg.is_bigendian = dds_msg.is_bigendian();
       ros_msg.point_step = dds_msg.point_step();
       ros_msg.row_step = dds_msg.row_step();
 

@@ -31,7 +31,8 @@
 
 #include <iostream>
 #include <csignal>
-#include <thread>  // <-- Added for sleep_for
+#include <thread>
+#include <limits>
 
 using PointT = pcl::PointXYZI;
 using CloudT = pcl::PointCloud<PointT>;
@@ -45,16 +46,16 @@ static bool running = true;
 void sigint_handler(int) { running = false; }
 
 static CloudT::Ptr convertToPCL(const DDSPointCloud2 &msg) {
-  if (msg.point_step() == 0 || msg.data().empty()) {
+  if (msg.point_step() < sizeof(float) * 4 || msg.data().empty()) {
     std::cerr << "[FILTER] ⚠️ Invalid PointCloud2 message (empty or malformed)\n";
     return CloudT::Ptr(new CloudT);
   }
 
   const size_t point_count = msg.data().size() / msg.point_step();
   CloudT::Ptr cloud(new CloudT);
-  cloud->width  = static_cast<uint32_t>(point_count);
+  cloud->width = static_cast<uint32_t>(point_count);
   cloud->height = 1;
-  cloud->is_dense = msg.is_dense();
+  cloud->is_dense = false;  // Always mark false since filtering may introduce gaps
   cloud->points.resize(point_count);
 
   const uint8_t *raw = msg.data().data();
@@ -70,7 +71,6 @@ static CloudT::Ptr convertToPCL(const DDSPointCloud2 &msg) {
 
 static CloudT::Ptr cleanCloud(const CloudT::Ptr &in) {
   std::cout << "[FILTER] 🔍 Pre-clean size: " << in->points.size() << std::endl;
-
   if (in->points.empty()) return CloudT::Ptr(new CloudT);
 
   pcl::VoxelGrid<PointT> vg;
@@ -82,7 +82,7 @@ static CloudT::Ptr cleanCloud(const CloudT::Ptr &in) {
   pcl::PassThrough<PointT> pass;
   pass.setInputCloud(vg_cloud);
   pass.setFilterFieldName("z");
-  pass.setFilterLimits(0.5f, 5.0f);
+  pass.setFilterLimits(-2.0f, 10.0f);  // widened range
   CloudT::Ptr range_cloud(new CloudT);
   pass.filter(*range_cloud);
 
@@ -108,7 +108,7 @@ static CloudT::Ptr cleanCloud(const CloudT::Ptr &in) {
   pcl::StatisticalOutlierRemoval<PointT> sor;
   sor.setInputCloud(no_ground);
   sor.setMeanK(20);
-  sor.setStddevMulThresh(1.0f);
+  sor.setStddevMulThresh(2.0f);  // less aggressive
   CloudT::Ptr cleaned(new CloudT);
   sor.filter(*cleaned);
 
@@ -128,7 +128,7 @@ static void publishCloud(const CloudT::Ptr &cloud,
   out.width(cloud->points.size());
   out.height(1);
   out.row_step(out.point_step() * out.width());
-  out.is_dense(cloud->is_dense);
+  out.is_dense(false);  // Always false due to filtering
 
   out.data().resize(out.row_step());
   uint8_t *dst = out.data().data();
@@ -163,7 +163,6 @@ void assessCollisionRisk(const CloudT::Ptr &cloud,
   for (const auto &pt : cloud->points) {
     float r = std::hypot(pt.x, pt.y);
     if (r < 0.01f || r > 3.0f) continue;
-
     float angle = std::atan2(pt.y, pt.x);
     int sector = static_cast<int>(std::floor((angle + M_PI) / SECTOR_ANGLE)) % SECTOR_COUNT;
     if (r < sectors[sector].min_distance) {
@@ -197,7 +196,6 @@ int main() {
   std::cout << "[FILTER] 📨 Publishing to DDS topic: filtered_points\n";
 
   size_t frame_count = 0;
-
   while (running) {
     auto samples = reader.take();
     if (samples.length() == 0) {
