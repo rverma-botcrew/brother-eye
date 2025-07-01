@@ -22,7 +22,7 @@ list (APPEND CMAKE_PREFIX_PATH
 
 add_executable(pointcloud_bridge_node
   src/pointcloud_bridge.cc
-  ${GEN_DIR}/pcl.cpp)
+  ${GEN_DIR}/dds_pcl.cpp)
 
 ament_target_dependencies(pointcloud_bridge_node
   rclcpp
@@ -41,6 +41,29 @@ target_link_libraries(pointcloud_bridge_node
   )
 
 install(TARGETS pointcloud_bridge_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+add_executable(dds2rosbridge_node
+  src/dds2rosbridge.cc
+  ${GEN_DIR}/dds_pcl.cpp)
+
+ament_target_dependencies(dds2rosbridge_node
+  rclcpp
+  sensor_msgs)
+
+target_include_directories(dds2rosbridge_node
+  PRIVATE
+    ${GEN_DIR}
+    $ENV{CXX_INSTALL}/include
+    $ENV{CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+target_link_libraries(dds2rosbridge_node
+  CycloneDDS-CXX::ddscxx
+  )
+
+install(TARGETS dds2rosbridge_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

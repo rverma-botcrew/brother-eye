@@ -9,7 +9,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include <ddscxx/dds/dds.hpp>
-#include "pcl.hpp"  // Make sure this includes generated CycloneDDS types
+#include "dds_pcl.hpp"  // Make sure this includes generated CycloneDDS types
 
 class PointCloudBridge : public rclcpp::Node {
 public:
@@ -75,7 +75,7 @@ private:
 
     // RCLCPP_INFO(this->get_logger(), "Received PointCloud2 message");
 
-    pcl_dds_msg::PointCloud2 dds_pointcloud;
+    pcl_dds_msgs::PointCloud2 dds_pointcloud;
     FillPointCloud2(*msg, dds_pointcloud);
 
     try {
@@ -86,10 +86,10 @@ private:
     }
   }
 
-  void FillPointCloud2(const sensor_msgs::msg::PointCloud2 &ros, pcl_dds_msg::PointCloud2 &dds) {
+  void FillPointCloud2(const sensor_msgs::msg::PointCloud2 &ros, pcl_dds_msgs::PointCloud2 &dds) {
     // Header
-    pcl_dds_msg::Header header;
-    pcl_dds_msg::Time stamp;
+    pcl_dds_msgs::Header header;
+    pcl_dds_msgs::Time stamp;
     stamp.sec(ros.header.stamp.sec);
     stamp.nanosec(ros.header.stamp.nanosec);
     header.stamp(stamp);
@@ -105,9 +105,9 @@ private:
     dds.is_dense(ros.is_dense);
 
     // Fields
-    std::vector<pcl_dds_msg::PointField> dds_fields;
+    std::vector<pcl_dds_msgs::PointField> dds_fields;
     for (const auto &field : ros.fields) {
-      pcl_dds_msg::PointField dds_field;
+      pcl_dds_msgs::PointField dds_field;
       dds_field.name(field.name);
       dds_field.offset(field.offset);
       dds_field.datatype(field.datatype);
@@ -126,9 +126,9 @@ private:
 
   // DDS components
   std::optional<dds::domain::DomainParticipant> dds_participant_;
-  std::optional<dds::topic::Topic<pcl_dds_msg::PointCloud2>> dds_topic_;
+  std::optional<dds::topic::Topic<pcl_dds_msgs::PointCloud2>> dds_topic_;
   std::optional<dds::pub::Publisher> dds_publisher_;
-  std::optional<dds::pub::DataWriter<pcl_dds_msg::PointCloud2>> dds_writer_;
+  std::optional<dds::pub::DataWriter<pcl_dds_msgs::PointCloud2>> dds_writer_;
 
   // Frequency monitor
   rclcpp::TimerBase::SharedPtr freq_timer_;
