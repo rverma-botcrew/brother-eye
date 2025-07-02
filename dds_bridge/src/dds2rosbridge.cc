@@ -10,11 +10,11 @@ public:
   DDS2ROSBridge()
     : Node("dds_to_ros_pointcloud_bridge"),
       dp_(0),
-      topic_(dp_, "filtered_points"),
+      topic_(dp_, "dds_clustered_points"),
       sub_(dp_),
       reader_(sub_, topic_)  // ✅ Initialize in constructor!
   {
-    pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/filtered_cloud", 10);
+    pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/ros_clustered_cloud", 10);
 
     timer_ = this->create_wall_timer(
       std::chrono::milliseconds(10),

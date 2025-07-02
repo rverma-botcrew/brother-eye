@@ -15,7 +15,7 @@
  *   3. PassThrough Z∈[0.5,5] m
  *   4. RANSAC plane → remove ground
  *   5. Statistical Outlier Removal
- *   6. Publish cleaned cloud to DDS topic "filtered_points"
+ *   6. Publish cleaned cloud to DDS topic "dds_clustered_points"
  */
 
 #include <ddscxx/dds/dds.hpp>
@@ -34,6 +34,10 @@
 #include <thread>
 #include <limits>
 #include <opencv2/opencv.hpp>
+
+#include <pcl/segmentation/extract_clusters.h>
+#include <pcl/search/kdtree.h>
+
 
 
 using PointT = pcl::PointXYZI;
@@ -118,6 +122,37 @@ static CloudT::Ptr cleanCloud(const CloudT::Ptr &in) {
   return cleaned;
 }
 
+static CloudT::Ptr extractClusters(const CloudT::Ptr& cloud) {
+  pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>);
+  tree->setInputCloud(cloud);
+
+  std::vector<pcl::PointIndices> cluster_indices;
+  pcl::EuclideanClusterExtraction<PointT> ec;
+  ec.setClusterTolerance(0.2);       // 20cm
+  ec.setMinClusterSize(10);
+  ec.setMaxClusterSize(5000);
+  ec.setSearchMethod(tree);
+  ec.setInputCloud(cloud);
+  ec.extract(cluster_indices);
+
+  CloudT::Ptr clustered(new CloudT);
+  int cluster_id = 1;
+  for (const auto& indices : cluster_indices) {
+    for (int idx : indices.indices) {
+      PointT p = cloud->points[idx];
+      p.intensity = static_cast<float>(cluster_id % 255);  // Use intensity as cluster ID
+      clustered->points.push_back(p);
+    }
+    ++cluster_id;
+  }
+
+  clustered->width = clustered->points.size();
+  clustered->height = 1;
+  clustered->is_dense = true;
+  return clustered;
+}
+
+
 static void publishCloud(const CloudT::Ptr &cloud,
                          dds::pub::DataWriter<DDSPointCloud2> &writer,
                          const DDSPointCloud2 &proto) {
@@ -154,8 +189,8 @@ public:
   SectorStatus() : min_distance(std::numeric_limits<float>::max()), risk(RiskLevel::NONE) {}
   void update(float r) {
     min_distance = r;
-    risk = r < 1.0f ? RiskLevel::RED :
-           r < 3.0f ? RiskLevel::YELLOW :
+    risk = r < 1.5f ? RiskLevel::RED :
+           r < 2.0f ? RiskLevel::YELLOW :
                       RiskLevel::GREEN;
   }
 };
@@ -164,7 +199,7 @@ void assessCollisionRisk(const CloudT::Ptr &cloud,
                          std::array<SectorStatus, SECTOR_COUNT> &sectors) {
   for (const auto &pt : cloud->points) {
     float r = std::hypot(pt.x, pt.y);
-    if (r < 0.01f || r > 90.0f) continue;
+    if (r < 0.9f || r > 90.0f) continue;
     float angle = std::atan2(pt.y, pt.x);
     int sector = std::min(SECTOR_COUNT - 1, std::max(0, static_cast<int>((angle + M_PI) / SECTOR_ANGLE)));
     if (r < sectors[sector].min_distance) {
@@ -215,8 +250,8 @@ int main() {
   std::cout << "[FILTER] 🚀 Initializing PointCloud filter node...\n";
 
   dds::domain::DomainParticipant dp(0);
-  dds::topic::Topic<DDSPointCloud2> in_topic(dp, "PointCloud");
-  dds::topic::Topic<DDSPointCloud2> out_topic(dp, "filtered_points");
+  dds::topic::Topic<DDSPointCloud2> in_topic(dp, "dds_raw_points");
+  dds::topic::Topic<DDSPointCloud2> out_topic(dp, "dds_clustered_points");
   dds::sub::Subscriber sub(dp);
   dds::pub::Publisher pub(dp);
 
@@ -231,8 +266,8 @@ int main() {
   dds::sub::DataReader<DDSPointCloud2> reader(sub, in_topic, reader_qos);
   dds::pub::DataWriter<DDSPointCloud2> writer(pub, out_topic, writer_qos);
 
-  std::cout << "[FILTER] 🔗 Subscribed to DDS topic: PointCloud\n";
-  std::cout << "[FILTER] 📨 Publishing to DDS topic: filtered_points\n";
+  std::cout << "[FILTER] 🔗 Subscribed to DDS topic: dds_raw_points\n";
+  std::cout << "[FILTER] 📨 Publishing to DDS topic: dds_clustered_points\n";
 
   size_t frame_count = 0;
   while (running) {
@@ -248,7 +283,10 @@ int main() {
                 << " | Points = " << msg.data().size() / msg.point_step() << std::endl;
 
       auto pcl_cloud = convertToPCL(msg);
-      auto cleaned   = cleanCloud(pcl_cloud);
+      // auto cleaned   = cleanCloud(pcl_cloud);
+      auto cleaned = cleanCloud(pcl_cloud);
+      auto clustered = extractClusters(cleaned);
+
       std::array<SectorStatus, SECTOR_COUNT> sectors;
       assessCollisionRisk(cleaned, sectors);
       displayRiskUI(sectors);
@@ -265,7 +303,8 @@ int main() {
                   << " (min_dist = " << sectors[i].min_distance << ")\n";
       }
 
-      publishCloud(cleaned, writer, msg);
+      publishCloud(clustered, writer, msg);
+
       std::cout << "[FILTER] ✅ Published cleaned cloud\n";
     }
   }

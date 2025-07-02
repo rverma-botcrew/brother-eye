@@ -20,7 +20,7 @@ public:
 
     // CycloneDDS setup
     dds_participant_.emplace(0); // domain ID 0
-    dds_topic_.emplace(*dds_participant_, "PointCloud");
+    dds_topic_.emplace(*dds_participant_, "dds_raw_points");
     dds_publisher_.emplace(*dds_participant_);
     dds_writer_.emplace(*dds_publisher_, *dds_topic_);
 
