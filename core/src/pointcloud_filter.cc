@@ -33,6 +33,8 @@
 #include <csignal>
 #include <thread>
 #include <limits>
+#include <opencv2/opencv.hpp>
+
 
 using PointT = pcl::PointXYZI;
 using CloudT = pcl::PointCloud<PointT>;
@@ -55,7 +57,7 @@ static CloudT::Ptr convertToPCL(const DDSPointCloud2 &msg) {
   CloudT::Ptr cloud(new CloudT);
   cloud->width = static_cast<uint32_t>(point_count);
   cloud->height = 1;
-  cloud->is_dense = false;  // Always mark false since filtering may introduce gaps
+  cloud->is_dense = false;  
   cloud->points.resize(point_count);
 
   const uint8_t *raw = msg.data().data();
@@ -152,8 +154,8 @@ public:
   SectorStatus() : min_distance(std::numeric_limits<float>::max()), risk(RiskLevel::NONE) {}
   void update(float r) {
     min_distance = r;
-    risk = r < 0.5f ? RiskLevel::RED :
-           r < 1.2f ? RiskLevel::YELLOW :
+    risk = r < 1.0f ? RiskLevel::RED :
+           r < 3.0f ? RiskLevel::YELLOW :
                       RiskLevel::GREEN;
   }
 };
@@ -162,13 +164,50 @@ void assessCollisionRisk(const CloudT::Ptr &cloud,
                          std::array<SectorStatus, SECTOR_COUNT> &sectors) {
   for (const auto &pt : cloud->points) {
     float r = std::hypot(pt.x, pt.y);
-    if (r < 0.01f || r > 3.0f) continue;
+    if (r < 0.01f || r > 90.0f) continue;
     float angle = std::atan2(pt.y, pt.x);
-    int sector = static_cast<int>(std::floor((angle + M_PI) / SECTOR_ANGLE)) % SECTOR_COUNT;
+    int sector = std::min(SECTOR_COUNT - 1, std::max(0, static_cast<int>((angle + M_PI) / SECTOR_ANGLE)));
     if (r < sectors[sector].min_distance) {
       sectors[sector].update(r);
     }
   }
+}
+
+void displayRiskUI(const std::array<SectorStatus, SECTOR_COUNT> &sectors) {
+  const int radius = 200;
+  const cv::Point center(radius + 10, radius + 10);
+  const int img_size = 2 * radius + 20;
+
+  cv::Mat img(img_size, img_size, CV_8UC3, cv::Scalar(30, 30, 30));
+
+  for (int i = 0; i < SECTOR_COUNT; ++i) {
+    float angle1 = i * SECTOR_ANGLE;
+    float angle2 = (i + 1) * SECTOR_ANGLE;
+
+    cv::Scalar color;
+    switch (sectors[i].risk) {
+      case RiskLevel::RED: color = cv::Scalar(0, 0, 255); break;
+      case RiskLevel::YELLOW: color = cv::Scalar(0, 255, 255); break;
+      case RiskLevel::GREEN: color = cv::Scalar(0, 255, 0); break;
+      default: color = cv::Scalar(100, 100, 100);
+    }
+
+    // Draw wedge
+    cv::ellipse(img, center, cv::Size(radius, radius),
+                0, angle1 * 180 / M_PI, angle2 * 180 / M_PI, color, -1);
+  }
+
+  // Draw transparent overlay for sector lines
+  cv::circle(img, center, radius, cv::Scalar(255, 255, 255), 2);
+  for (int i = 0; i < SECTOR_COUNT; ++i) {
+    float a = i * SECTOR_ANGLE;
+    cv::Point end(center.x + radius * std::cos(a),
+                  center.y + radius * std::sin(a));
+    cv::line(img, center, end, cv::Scalar(255, 255, 255), 1);
+  }
+
+  cv::imshow("Collision Risk", img);
+  cv::waitKey(1);
 }
 
 int main() {
@@ -212,6 +251,7 @@ int main() {
       auto cleaned   = cleanCloud(pcl_cloud);
       std::array<SectorStatus, SECTOR_COUNT> sectors;
       assessCollisionRisk(cleaned, sectors);
+      displayRiskUI(sectors);
 
       for (int i = 0; i < sectors.size(); ++i) {
         std::string risk_str;

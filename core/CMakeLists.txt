@@ -12,6 +12,7 @@ message(STATUS "CMAKE_PREFIX_PATH = ${CMAKE_PREFIX_PATH}")
 find_package(CycloneDDS-CXX CONFIG REQUIRED)
 find_package(iceoryx_binding_c CONFIG REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common filters segmentation)
+find_package(OpenCV REQUIRED)
 
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
@@ -35,4 +36,5 @@ target_link_libraries(pointcloud_filter
   CycloneDDS-CXX::ddscxx
   iceoryx_binding_c::iceoryx_binding_c
   ${PCL_LIBRARIES}
+  ${OpenCV_LIBRARIES}
   )
