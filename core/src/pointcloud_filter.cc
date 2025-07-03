@@ -18,6 +18,7 @@
  *   6. Publish cleaned cloud to DDS topic "dds_clustered_points"
  */
 
+// --- Includes ---
 #include <ddscxx/dds/dds.hpp>
 #include "dds_pcl.hpp"
 
@@ -28,40 +29,154 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/segmentation/extract_clusters.h>
+#include <pcl/search/kdtree.h>
 
 #include <iostream>
 #include <csignal>
 #include <thread>
 #include <limits>
 #include <opencv2/opencv.hpp>
+#include <algorithm>
+#include <exception>
 
-#include <pcl/segmentation/extract_clusters.h>
-#include <pcl/search/kdtree.h>
-
-
-
+// --- Aliases ---
 using PointT = pcl::PointXYZI;
 using CloudT = pcl::PointCloud<PointT>;
 using DDSPointCloud2 = pcl_dds_msgs::PointCloud2;
 
+// --- Constants ---
 constexpr int SECTOR_COUNT = 12;
 constexpr float FULL_CIRCLE = 2.0f * M_PI;
 constexpr float SECTOR_ANGLE = FULL_CIRCLE / SECTOR_COUNT;
+constexpr int RISK_HOLD_FRAMES = 5;
 
+// --- Risk Level Enum ---
+enum class RiskLevel { NONE, GREEN, YELLOW, RED };
+
+// --- Sector Memory for Temporal Smoothing ---
+class SectorMemory {
+public:
+  int hold_count = 0;
+  RiskLevel last_risk = RiskLevel::NONE;
+
+  void update(RiskLevel new_risk) {
+    if (new_risk > last_risk) {
+      last_risk = new_risk;
+      hold_count = RISK_HOLD_FRAMES;
+    } else if (hold_count > 0) {
+      --hold_count;
+    } else {
+      last_risk = new_risk;
+    }
+  }
+};
+
+class KalmanTracker {
+  cv::KalmanFilter kf;
+  cv::Mat state;      // [x, y, vx, vy]
+  cv::Mat meas;       // [x, y]
+
+public:
+  KalmanTracker() {
+    kf = cv::KalmanFilter(4, 2);
+    state = cv::Mat::zeros(4, 1, CV_32F);
+    meas = cv::Mat::zeros(2, 1, CV_32F);
+
+    kf.transitionMatrix = (cv::Mat_<float>(4, 4) <<
+                            1, 0, 1, 0,
+                            0, 1, 0, 1,
+                            0, 0, 1, 0,
+                            0, 0, 0, 1);
+    kf.measurementMatrix = cv::Mat::eye(2, 4, CV_32F);
+    setIdentity(kf.processNoiseCov, cv::Scalar(2e-1));
+    setIdentity(kf.measurementNoiseCov, cv::Scalar(1e-2));
+    // setIdentity(kf.processNoiseCov, cv::Scalar(5e-2));     // Prediction Trust = more smoothing
+    // setIdentity(kf.measurementNoiseCov, cv::Scalar(5e-2)); // Measurement trust = bit more trust in sensor
+    setIdentity(kf.errorCovPost, cv::Scalar(1));
+  }
+
+  cv::Point2f update(const cv::Point2f& pt) {
+    meas.at<float>(0) = pt.x;
+    meas.at<float>(1) = pt.y;
+
+    kf.correct(meas);
+    cv::Mat prediction = kf.predict();
+
+    return cv::Point2f(prediction.at<float>(0), prediction.at<float>(1));
+  }
+
+  // Provide direct prediction without measurement update
+  cv::Point2f predict() {
+    cv::Mat prediction = kf.predict();
+    return cv::Point2f(prediction.at<float>(0), prediction.at<float>(1));
+  }
+};
+
+
+// --- Kalman Tracker Class ---
+class TrackedObject {
+public:
+  KalmanTracker kf;
+  cv::Point2f last_centroid;
+  int age = 0;
+  int lost_frames = 0;
+  bool active = true;
+
+  TrackedObject() = default;
+
+  TrackedObject(const cv::Point2f& init)
+    : kf(), last_centroid(init), age(0), lost_frames(0), active(true) {
+  }
+
+  void update(const cv::Point2f& new_pos) {
+    last_centroid = kf.update(new_pos);
+    lost_frames = 0;
+    ++age;
+  }
+
+  void predict() {
+    last_centroid = kf.predict();
+    ++lost_frames;
+  }
+
+  float distanceTo(const cv::Point2f& p) const {
+    return cv::norm(last_centroid - p);
+  }
+};
+
+
+// --- Sector Status (Per Frame) ---
+class SectorStatus {
+public:
+  float min_distance;
+  RiskLevel risk;
+  SectorStatus() : min_distance(std::numeric_limits<float>::max()), risk(RiskLevel::NONE) {}
+  void update(float r) {
+    min_distance = r;
+    risk = r < 1.5f ? RiskLevel::RED :
+           r < 2.0f ? RiskLevel::YELLOW :
+                      RiskLevel::GREEN;
+  }
+};
+
+
+// --- Globals ---
+std::array<SectorMemory, SECTOR_COUNT> sector_memory;
+std::map<int, TrackedObject> tracked_objects;
+int next_id = 0;
+
+// std::vector<cv::Point2f> tracked_centroids;
 static bool running = true;
 void sigint_handler(int) { running = false; }
 
+// --- DDS → PCL Conversion ---
 static CloudT::Ptr convertToPCL(const DDSPointCloud2 &msg) {
-  if (msg.point_step() < sizeof(float) * 4 || msg.data().empty()) {
-    std::cerr << "[FILTER] ⚠️ Invalid PointCloud2 message (empty or malformed)\n";
-    return CloudT::Ptr(new CloudT);
-  }
-
   const size_t point_count = msg.data().size() / msg.point_step();
   CloudT::Ptr cloud(new CloudT);
   cloud->width = static_cast<uint32_t>(point_count);
   cloud->height = 1;
-  cloud->is_dense = false;  
+  cloud->is_dense = false;
   cloud->points.resize(point_count);
 
   const uint8_t *raw = msg.data().data();
@@ -75,10 +190,8 @@ static CloudT::Ptr convertToPCL(const DDSPointCloud2 &msg) {
   return cloud;
 }
 
+// --- Clean PointCloud ---
 static CloudT::Ptr cleanCloud(const CloudT::Ptr &in) {
-  std::cout << "[FILTER] 🔍 Pre-clean size: " << in->points.size() << std::endl;
-  if (in->points.empty()) return CloudT::Ptr(new CloudT);
-
   pcl::VoxelGrid<PointT> vg;
   vg.setInputCloud(in);
   vg.setLeafSize(0.05f, 0.05f, 0.05f);
@@ -88,7 +201,7 @@ static CloudT::Ptr cleanCloud(const CloudT::Ptr &in) {
   pcl::PassThrough<PointT> pass;
   pass.setInputCloud(vg_cloud);
   pass.setFilterFieldName("z");
-  pass.setFilterLimits(-2.0f, 10.0f);  // widened range
+  pass.setFilterLimits(-2.0f, 10.0f);
   CloudT::Ptr range_cloud(new CloudT);
   pass.filter(*range_cloud);
 
@@ -114,87 +227,45 @@ static CloudT::Ptr cleanCloud(const CloudT::Ptr &in) {
   pcl::StatisticalOutlierRemoval<PointT> sor;
   sor.setInputCloud(no_ground);
   sor.setMeanK(20);
-  sor.setStddevMulThresh(2.0f);  // less aggressive
+  sor.setStddevMulThresh(2.0f);
   CloudT::Ptr cleaned(new CloudT);
   sor.filter(*cleaned);
 
-  std::cout << "[FILTER] ✨ Post-clean size: " << cleaned->points.size() << std::endl;
   return cleaned;
 }
 
-static CloudT::Ptr extractClusters(const CloudT::Ptr& cloud) {
+
+std::vector<cv::Point2f> extractCentroids(const CloudT::Ptr& cloud) {
   pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>);
   tree->setInputCloud(cloud);
 
   std::vector<pcl::PointIndices> cluster_indices;
   pcl::EuclideanClusterExtraction<PointT> ec;
-  ec.setClusterTolerance(0.2);       // 20cm
+  ec.setClusterTolerance(0.2);
   ec.setMinClusterSize(10);
   ec.setMaxClusterSize(5000);
   ec.setSearchMethod(tree);
   ec.setInputCloud(cloud);
   ec.extract(cluster_indices);
 
-  CloudT::Ptr clustered(new CloudT);
-  int cluster_id = 1;
+  std::vector<cv::Point2f> centroids;
+
   for (const auto& indices : cluster_indices) {
+    float sum_x = 0, sum_y = 0;
     for (int idx : indices.indices) {
-      PointT p = cloud->points[idx];
-      p.intensity = static_cast<float>(cluster_id % 255);  // Use intensity as cluster ID
-      clustered->points.push_back(p);
+      const PointT& p = cloud->points[idx];
+      sum_x += p.x;
+      sum_y += p.y;
     }
-    ++cluster_id;
+    int N = indices.indices.size();
+    centroids.emplace_back(sum_x / N, sum_y / N);
   }
 
-  clustered->width = clustered->points.size();
-  clustered->height = 1;
-  clustered->is_dense = true;
-  return clustered;
+  return centroids;
 }
 
 
-static void publishCloud(const CloudT::Ptr &cloud,
-                         dds::pub::DataWriter<DDSPointCloud2> &writer,
-                         const DDSPointCloud2 &proto) {
-  if (cloud->empty()) {
-    std::cerr << "[FILTER] ⚠️ Skipping publish: empty cloud\n";
-    return;
-  }
-
-  DDSPointCloud2 out = proto;
-  out.width(cloud->points.size());
-  out.height(1);
-  out.row_step(out.point_step() * out.width());
-  out.is_dense(false);  // Always false due to filtering
-
-  out.data().resize(out.row_step());
-  uint8_t *dst = out.data().data();
-  for (size_t i = 0; i < cloud->points.size(); ++i) {
-    float *p_dst = reinterpret_cast<float *>(dst + i * out.point_step());
-    const auto &p = cloud->points[i];
-    p_dst[0] = p.x;
-    p_dst[1] = p.y;
-    p_dst[2] = p.z;
-    p_dst[3] = p.intensity;
-  }
-  writer.write(out);
-}
-
-enum class RiskLevel { NONE, GREEN, YELLOW, RED };
-
-class SectorStatus {
-public:
-  float min_distance;
-  RiskLevel risk;
-  SectorStatus() : min_distance(std::numeric_limits<float>::max()), risk(RiskLevel::NONE) {}
-  void update(float r) {
-    min_distance = r;
-    risk = r < 1.5f ? RiskLevel::RED :
-           r < 2.0f ? RiskLevel::YELLOW :
-                      RiskLevel::GREEN;
-  }
-};
-
+// --- Risk Assessment ---
 void assessCollisionRisk(const CloudT::Ptr &cloud,
                          std::array<SectorStatus, SECTOR_COUNT> &sectors) {
   for (const auto &pt : cloud->points) {
@@ -206,8 +277,81 @@ void assessCollisionRisk(const CloudT::Ptr &cloud,
       sectors[sector].update(r);
     }
   }
+
+  for (int i = 0; i < SECTOR_COUNT; ++i) {
+    sector_memory[i].update(sectors[i].risk);
+    sectors[i].risk = sector_memory[i].last_risk;
+  }
 }
 
+// --- DDS Publisher ---
+// static void publishCloud(const CloudT::Ptr &cloud,
+//                          dds::pub::DataWriter<DDSPointCloud2> &writer,
+//                          const DDSPointCloud2 &proto) {
+//   DDSPointCloud2 out = proto;
+//   out.width(cloud->points.size());
+//   out.height(1);
+//   out.row_step(out.point_step() * out.width());
+//   out.is_dense(false);
+//   out.data().resize(out.row_step());
+
+//   uint8_t *dst = out.data().data();
+//   for (size_t i = 0; i < cloud->points.size(); ++i) {
+//     float *p_dst = reinterpret_cast<float *>(dst + i * out.point_step());
+//     const auto &p = cloud->points[i];
+//     p_dst[0] = p.x;
+//     p_dst[1] = p.y;
+//     p_dst[2] = p.z;
+//     p_dst[3] = p.intensity;
+//   }
+//   writer.write(out);
+// }
+
+static void publishCloud(const CloudT::Ptr &cloud,
+                         dds::pub::DataWriter<DDSPointCloud2> &writer,
+                         const DDSPointCloud2 &proto) {
+  // 💣 Bail out if empty cloud
+  if (cloud->points.empty()) {
+    std::cerr << "[FILTER] ⚠️ Skipping publish: empty cloud\n";
+    return;
+  }
+
+  // 💣 Bail out if proto is invalid (this often causes DDS crash)
+  if (proto.point_step() == 0) {
+    std::cerr << "[FILTER] ❌ Invalid proto: point_step=0\n";
+    return;
+  }
+
+  DDSPointCloud2 out = proto;
+  out.width(cloud->points.size());
+  out.height(1);
+  out.row_step(out.point_step() * out.width());
+  out.is_dense(false);
+  out.data().resize(out.row_step());
+
+  uint8_t *dst = out.data().data();
+  for (size_t i = 0; i < cloud->points.size(); ++i) {
+    float *p_dst = reinterpret_cast<float *>(dst + i * out.point_step());
+    const auto &p = cloud->points[i];
+    p_dst[0] = p.x;
+    p_dst[1] = p.y;
+    p_dst[2] = p.z;
+    p_dst[3] = p.intensity;
+  }
+
+  try {
+    writer.write(out);
+  } catch (const dds::core::Exception &e) {
+    std::cerr << "[FILTER] ❌ DDS Write Exception: " << e.what() << "\n";
+  } catch (const std::exception &e) {
+    std::cerr << "[FILTER] ❌ std::exception in DDS write: " << e.what() << "\n";
+  } catch (...) {
+    std::cerr << "[FILTER] ❌ Unknown exception in DDS write\n";
+  }
+}
+
+
+// --- Visual UI (optional) ---
 void displayRiskUI(const std::array<SectorStatus, SECTOR_COUNT> &sectors) {
   const int radius = 200;
   const cv::Point center(radius + 10, radius + 10);
@@ -227,12 +371,10 @@ void displayRiskUI(const std::array<SectorStatus, SECTOR_COUNT> &sectors) {
       default: color = cv::Scalar(100, 100, 100);
     }
 
-    // Draw wedge
     cv::ellipse(img, center, cv::Size(radius, radius),
                 0, angle1 * 180 / M_PI, angle2 * 180 / M_PI, color, -1);
   }
 
-  // Draw transparent overlay for sector lines
   cv::circle(img, center, radius, cv::Scalar(255, 255, 255), 2);
   for (int i = 0; i < SECTOR_COUNT; ++i) {
     float a = i * SECTOR_ANGLE;
@@ -245,6 +387,7 @@ void displayRiskUI(const std::array<SectorStatus, SECTOR_COUNT> &sectors) {
   cv::waitKey(1);
 }
 
+// --- Main ---
 int main() {
   std::signal(SIGINT, sigint_handler);
   std::cout << "[FILTER] 🚀 Initializing PointCloud filter node...\n";
@@ -279,36 +422,88 @@ int main() {
 
     for (auto &s : samples) {
       const auto &msg = s.data();
-      std::cout << "[FILTER] 📦 Received DDS frame #" << ++frame_count
+      std::cout << "[FILTER] 📦 Frame #" << ++frame_count
                 << " | Points = " << msg.data().size() / msg.point_step() << std::endl;
 
-      auto pcl_cloud = convertToPCL(msg);
-      // auto cleaned   = cleanCloud(pcl_cloud);
-      auto cleaned = cleanCloud(pcl_cloud);
-      auto clustered = extractClusters(cleaned);
+      auto cloud_raw = convertToPCL(msg);
+      auto cleaned = cleanCloud(cloud_raw);
+      auto centroids = extractCentroids(cleaned);
+
+// Simple nearest match tracking
+std::set<int> matched_ids;
+for (const auto& c : centroids) {
+  int best_id = -1;
+  float best_dist = std::max(0.4f, 1.0f - 0.05f * tracked_objects.size());
+  // Find existing object closest to centroid
+  for (auto& [id, obj] : tracked_objects) {
+    float d = obj.distanceTo(c);
+    if (d < best_dist && matched_ids.count(id) == 0) {
+      best_dist = d;
+      best_id = id;
+    }
+  }
+
+  if (best_id == -1) {
+    // New object
+    tracked_objects[next_id] = TrackedObject(c);
+    matched_ids.insert(next_id);
+    ++next_id;
+  } else {
+    // Existing object update
+    tracked_objects[best_id].update(c);
+    matched_ids.insert(best_id);
+  }
+}
+
+// Predict for unmatched tracked objects
+for (auto& [id, obj] : tracked_objects) {
+  if (matched_ids.count(id) == 0) {
+    obj.predict();
+  }
+}
+
+// Optionally: clean up old trackers not updated
+for (auto it = tracked_objects.begin(); it != tracked_objects.end();) {
+  if (it->second.lost_frames > 10) {
+    it = tracked_objects.erase(it);
+  } else {
+    ++it;
+  }
+}
+
+
+      // auto clustered = extractClusters(cleaned);
+      CloudT::Ptr clustered(new CloudT);
+for (const auto& [id, obj] : tracked_objects) {
+  PointT p;
+  p.x = obj.last_centroid.x;
+  p.y = obj.last_centroid.y;
+  p.z = 0.0f;
+  p.intensity = 200.0f + id % 55;  // Uniqueish intensity per ID
+  clustered->points.push_back(p);
+}
+clustered->width = clustered->points.size();
+clustered->height = 1;
+clustered->is_dense = true;
+
 
       std::array<SectorStatus, SECTOR_COUNT> sectors;
       assessCollisionRisk(cleaned, sectors);
       displayRiskUI(sectors);
 
-      for (int i = 0; i < sectors.size(); ++i) {
-        std::string risk_str;
-        switch (sectors[i].risk) {
-          case RiskLevel::RED: risk_str = "RED"; break;
-          case RiskLevel::YELLOW: risk_str = "YELLOW"; break;
-          case RiskLevel::GREEN: risk_str = "GREEN"; break;
-          default: risk_str = "NONE";
-        }
-        std::cout << "  ▸ Sector " << i << ": " << risk_str
-                  << " (min_dist = " << sectors[i].min_distance << ")\n";
+      try {
+        publishCloud(clustered, writer, msg);
+        std::cout << "[FILTER] ✅ Published clustered cloud\n";
+      } catch (const dds::core::Exception &e) {
+        std::cerr << "[FILTER] ❌ publishCloud exception: " << e.what() << "\n";
+      } catch (const std::exception &e) {
+        std::cerr << "[FILTER] ❌ publishCloud std::exception: " << e.what() << "\n";
+      } catch (...) {
+        std::cerr << "[FILTER] ❌ publishCloud unknown exception\n";
       }
-
-      publishCloud(clustered, writer, msg);
-
-      std::cout << "[FILTER] ✅ Published cleaned cloud\n";
     }
   }
 
-  std::cout << "[FILTER] 👋 Shutdown requested, exiting cleanly.\n";
+  std::cout << "[FILTER] 👋 Shutdown complete.\n";
   return 0;
 }
