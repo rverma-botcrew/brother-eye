@@ -89,10 +89,8 @@ public:
                             0, 0, 1, 0,
                             0, 0, 0, 1);
     kf.measurementMatrix = cv::Mat::eye(2, 4, CV_32F);
-    setIdentity(kf.processNoiseCov, cv::Scalar(2e-1));
-    setIdentity(kf.measurementNoiseCov, cv::Scalar(1e-2));
-    // setIdentity(kf.processNoiseCov, cv::Scalar(5e-2));     // Prediction Trust = more smoothing
-    // setIdentity(kf.measurementNoiseCov, cv::Scalar(5e-2)); // Measurement trust = bit more trust in sensor
+    setIdentity(kf.processNoiseCov, cv::Scalar(1e-1));    // smoother prediction
+    setIdentity(kf.measurementNoiseCov, cv::Scalar(5e-2)); // trust measurements less
     setIdentity(kf.errorCovPost, cv::Scalar(1));
   }
 
@@ -429,62 +427,59 @@ int main() {
       auto cleaned = cleanCloud(cloud_raw);
       auto centroids = extractCentroids(cleaned);
 
-// Simple nearest match tracking
-std::set<int> matched_ids;
-for (const auto& c : centroids) {
-  int best_id = -1;
-  float best_dist = std::max(0.4f, 1.0f - 0.05f * tracked_objects.size());
-  // Find existing object closest to centroid
-  for (auto& [id, obj] : tracked_objects) {
-    float d = obj.distanceTo(c);
-    if (d < best_dist && matched_ids.count(id) == 0) {
-      best_dist = d;
-      best_id = id;
-    }
-  }
+      // Predict all tracker positions before matching
+      for (auto& [id, obj] : tracked_objects) {
+        obj.predict();
+      }
 
-  if (best_id == -1) {
-    // New object
-    tracked_objects[next_id] = TrackedObject(c);
-    matched_ids.insert(next_id);
-    ++next_id;
-  } else {
-    // Existing object update
-    tracked_objects[best_id].update(c);
-    matched_ids.insert(best_id);
-  }
-}
+      // Simple nearest match tracking
+      std::set<int> matched_ids;
+      for (const auto& c : centroids) {
+        int best_id = -1;
+        float best_dist = std::max(0.4f, 1.0f - 0.05f * tracked_objects.size());
+        // Find existing object closest to centroid
+        for (auto& [id, obj] : tracked_objects) {
+          float d = obj.distanceTo(c);
+          if (d < best_dist && matched_ids.count(id) == 0) {
+            best_dist = d;
+            best_id = id;
+          }
+        }
 
-// Predict for unmatched tracked objects
-for (auto& [id, obj] : tracked_objects) {
-  if (matched_ids.count(id) == 0) {
-    obj.predict();
-  }
-}
+        if (best_id == -1) {
+          // New object
+          tracked_objects[next_id] = TrackedObject(c);
+          matched_ids.insert(next_id);
+          ++next_id;
+        } else {
+          // Existing object update
+          tracked_objects[best_id].update(c);
+          matched_ids.insert(best_id);
+        }
+      }
 
-// Optionally: clean up old trackers not updated
-for (auto it = tracked_objects.begin(); it != tracked_objects.end();) {
-  if (it->second.lost_frames > 10) {
-    it = tracked_objects.erase(it);
-  } else {
-    ++it;
-  }
-}
-
+      // Optionally: clean up old trackers not updated
+      for (auto it = tracked_objects.begin(); it != tracked_objects.end();) {
+        if (it->second.lost_frames > 5) {
+          it = tracked_objects.erase(it);
+        } else {
+          ++it;
+        }
+      }
 
       // auto clustered = extractClusters(cleaned);
       CloudT::Ptr clustered(new CloudT);
-for (const auto& [id, obj] : tracked_objects) {
-  PointT p;
-  p.x = obj.last_centroid.x;
-  p.y = obj.last_centroid.y;
-  p.z = 0.0f;
-  p.intensity = 200.0f + id % 55;  // Uniqueish intensity per ID
-  clustered->points.push_back(p);
-}
-clustered->width = clustered->points.size();
-clustered->height = 1;
-clustered->is_dense = true;
+      for (const auto& [id, obj] : tracked_objects) {
+        PointT p;
+        p.x = obj.last_centroid.x;
+        p.y = obj.last_centroid.y;
+        p.z = 0.0f;
+        p.intensity = 200.0f + id % 55;  // Uniqueish intensity per ID
+        clustered->points.push_back(p);
+      }
+      clustered->width = clustered->points.size();
+      clustered->height = 1;
+      clustered->is_dense = true;
 
 
       std::array<SectorStatus, SECTOR_COUNT> sectors;
