@@ -21,6 +21,7 @@
 #include <exception>
 #include <iomanip>
 #include <chrono>
+#include <fstream>
 
 // --- Aliases ---
 using PointT = pcl::PointXYZI;
@@ -367,6 +368,191 @@ bool validatePoint2D(const cv::Point2f& point) {
 
 bool validatePoint3D(const cv::Point3f& point) {
   return isValidFloat(point.x) && isValidFloat(point.y) && isValidFloat(point.z);
+}
+
+// --- JSON Serialization Functions ---
+std::string escapeJsonString(const std::string& input) {
+  std::ostringstream ss;
+  for (char c : input) {
+    switch (c) {
+      case '"': ss << "\\\""; break;
+      case '\\': ss << "\\\\"; break;
+      case '\b': ss << "\\b"; break;
+      case '\f': ss << "\\f"; break;
+      case '\n': ss << "\\n"; break;
+      case '\r': ss << "\\r"; break;
+      case '\t': ss << "\\t"; break;
+      default: ss << c; break;
+    }
+  }
+  return ss.str();
+}
+
+std::string formatFloat(float value, int precision = 3) {
+  std::ostringstream ss;
+  ss << std::fixed << std::setprecision(precision) << value;
+  return ss.str();
+}
+
+std::string clusterInfoToJson(const ClusterInfo& cluster, int tracked_id = -1, int age = 0, int lost_frames = 0) {
+  std::ostringstream json;
+  json << "{\n";
+  json << "    \"id\": " << cluster.id << ",\n";
+  json << "    \"tracked_id\": " << tracked_id << ",\n";
+  json << "    \"centroid\": {\n";
+  json << "      \"x\": " << formatFloat(cluster.centroid.x) << ",\n";
+  json << "      \"y\": " << formatFloat(cluster.centroid.y) << "\n";
+  json << "    },\n";
+  json << "    \"distance\": " << formatFloat(cluster.distance) << ",\n";
+  json << "    \"angle_radians\": " << formatFloat(cluster.angle) << ",\n";
+  json << "    \"angle_degrees\": " << formatFloat(cluster.angle * 180.0f / M_PI) << ",\n";
+  
+  // Risk level as both enum and string
+  std::string risk_str;
+  int risk_level = 0;
+  switch (cluster.risk) {
+    case RiskLevel::RED: risk_str = "RED"; risk_level = 3; break;
+    case RiskLevel::YELLOW: risk_str = "YELLOW"; risk_level = 2; break;
+    case RiskLevel::GREEN: risk_str = "GREEN"; risk_level = 1; break;
+    default: risk_str = "NONE"; risk_level = 0; break;
+  }
+  
+  json << "    \"risk\": {\n";
+  json << "      \"level\": " << risk_level << ",\n";
+  json << "      \"name\": \"" << risk_str << "\"\n";
+  json << "    },\n";
+  
+  // Bounding box
+  json << "    \"bounding_box\": {\n";
+  json << "      \"center\": {\n";
+  json << "        \"x\": " << formatFloat(cluster.bbox_center.x) << ",\n";
+  json << "        \"y\": " << formatFloat(cluster.bbox_center.y) << ",\n";
+  json << "        \"z\": " << formatFloat(cluster.bbox_center.z) << "\n";
+  json << "      },\n";
+  json << "      \"size\": {\n";
+  json << "        \"width\": " << formatFloat(cluster.bbox_size.x) << ",\n";
+  json << "        \"height\": " << formatFloat(cluster.bbox_size.y) << ",\n";
+  json << "        \"depth\": " << formatFloat(cluster.bbox_size.z) << "\n";
+  json << "      },\n";
+  json << "      \"volume\": " << formatFloat(cluster.bbox_size.x * cluster.bbox_size.y * cluster.bbox_size.z) << "\n";
+  json << "    },\n";
+  
+  // Tracking information
+  json << "    \"tracking\": {\n";
+  json << "      \"age\": " << age << ",\n";
+  json << "      \"lost_frames\": " << lost_frames << "\n";
+  json << "    }\n";
+  json << "  }";
+  
+  return json.str();
+}
+
+std::string clustersToJson(const std::vector<ClusterInfo>& clusters, 
+                          const std::map<int, TrackedObject>& tracked_objects,
+                          size_t frame_number) {
+  std::ostringstream json;
+  
+  // Get current timestamp
+  auto now = std::chrono::high_resolution_clock::now();
+  auto time_since_epoch = now.time_since_epoch();
+  auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_since_epoch);
+  auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(time_since_epoch) % 1000;
+  
+  json << "{\n";
+  json << "  \"timestamp\": {\n";
+  json << "    \"seconds\": " << seconds.count() << ",\n";
+  json << "    \"milliseconds\": " << milliseconds.count() << ",\n";
+  json << "    \"iso8601\": \"" << std::to_string(seconds.count()) << "." << std::setfill('0') << std::setw(3) << milliseconds.count() << "\"\n";
+  json << "  },\n";
+  json << "  \"frame_number\": " << frame_number << ",\n";
+  json << "  \"frame_id\": \"base_link\",\n";
+  json << "  \"cluster_count\": " << clusters.size() << ",\n";
+  json << "  \"tracked_object_count\": " << tracked_objects.size() << ",\n";
+  
+  // Statistics
+  size_t red_count = 0, yellow_count = 0, green_count = 0, none_count = 0;
+  float min_distance = std::numeric_limits<float>::max();
+  float max_distance = 0.0f;
+  
+  for (const auto& cluster : clusters) {
+    switch (cluster.risk) {
+      case RiskLevel::RED: red_count++; break;
+      case RiskLevel::YELLOW: yellow_count++; break;
+      case RiskLevel::GREEN: green_count++; break;
+      default: none_count++; break;
+    }
+    min_distance = std::min(min_distance, cluster.distance);
+    max_distance = std::max(max_distance, cluster.distance);
+  }
+  
+  if (clusters.empty()) {
+    min_distance = 0.0f;
+  }
+  
+  json << "  \"statistics\": {\n";
+  json << "    \"risk_distribution\": {\n";
+  json << "      \"red\": " << red_count << ",\n";
+  json << "      \"yellow\": " << yellow_count << ",\n";
+  json << "      \"green\": " << green_count << ",\n";
+  json << "      \"none\": " << none_count << "\n";
+  json << "    },\n";
+  json << "    \"distance_range\": {\n";
+  json << "      \"min\": " << formatFloat(min_distance) << ",\n";
+  json << "      \"max\": " << formatFloat(max_distance) << "\n";
+  json << "    }\n";
+  json << "  },\n";
+  
+  json << "  \"clusters\": [\n";
+  
+  // Add cluster data
+  for (size_t i = 0; i < clusters.size(); ++i) {
+    const auto& cluster = clusters[i];
+    
+    // Find matching tracked object
+    int tracked_id = -1;
+    int age = 0;
+    int lost_frames = 0;
+    
+    for (const auto& [id, obj] : tracked_objects) {
+      if (cv::norm(cluster.centroid - obj.last_centroid) < 0.3f) {
+        tracked_id = id;
+        age = obj.age;
+        lost_frames = obj.lost_frames;
+        break;
+      }
+    }
+    
+    json << clusterInfoToJson(cluster, tracked_id, age, lost_frames);
+    if (i < clusters.size() - 1) {
+      json << ",";
+    }
+    json << "\n";
+  }
+  
+  json << "  ]\n";
+  json << "}";
+  
+  return json.str();
+}
+
+// --- JSON Publishing Functions ---
+void publishJsonToFile(const std::string& json_data, const std::string& filename = "/tmp/clusters.json") {
+  try {
+    std::ofstream file(filename);
+    if (file.is_open()) {
+      file << json_data;
+      file.close();
+      std::cout << "[FILTER] 📄 Published JSON to " << filename << "\n";
+    } else {
+      std::cerr << "[FILTER] ❌ Failed to open JSON file: " << filename << "\n";
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "[FILTER] ❌ JSON file write error: " << e.what() << "\n";
+  }
+}
+
+void publishJsonToConsole(const std::string& json_data) {
+  std::cout << "[FILTER] 📄 JSON Output:\n" << json_data << "\n" << std::endl;
 }
 
 // --- Convert to DDS Message ---
@@ -806,6 +992,10 @@ int main() {
       // Analyze cluster risk with distance and angle
       auto cluster_analysis = analyzeClusterRisk(cluster_data);
       displayClusterRiskUI(cluster_analysis);
+
+      // Export cluster analysis as JSON
+      std::string json_data = clustersToJson(cluster_analysis, tracked_objects, frame_count);
+      publishJsonToFile(json_data, "/tmp/clusters.json");
 
       // Publish cluster analysis over DDS
       auto cluster_msg = convertToClusterArray(cluster_analysis, tracked_objects);
