@@ -88,13 +88,13 @@ module pcl_dds_msgs {
   @extensibility(APPENDABLE)
   struct ClusterArray {
     Header header;
-    sequence<ClusterInfo, 256> clusters;
+    sequence<ClusterInfo, 1024> clusters;
   };
 
   @extensibility(APPENDABLE)
   struct BoundingBoxArray {
     Header header;
-    sequence<BoundingBox3D, 256> boxes;
+    sequence<BoundingBox3D, 1024> boxes;
   };
 
 };

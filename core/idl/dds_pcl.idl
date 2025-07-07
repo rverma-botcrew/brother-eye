@@ -1,100 +1,100 @@
-module pcl_dds_msgs {
+  module pcl_dds_msgs {
 
-  @extensibility(APPENDABLE)
-  struct Time {
-    int32 sec;
-    uint32 nanosec;
+    @extensibility(APPENDABLE)
+    struct Time {
+      int32 sec;
+      uint32 nanosec;
+    };
+
+    @extensibility(APPENDABLE)
+    struct Header {
+      Time stamp;
+      string<256> frame_id;
+    };
+
+    @extensibility(APPENDABLE)
+    struct PointField {
+      string<128> name;
+      uint32 offset;
+      uint8 datatype;
+      uint32 count;
+    };
+
+    @extensibility(APPENDABLE)
+    struct PointCloud2 {
+      Header header;
+      uint32 height;
+      uint32 width;
+      sequence<PointField, 64> fields;
+      boolean is_bigendian;
+      uint32 point_step;
+      uint32 row_step;
+      sequence<uint8, 1048576> data;
+      boolean is_dense;
+    };
+
+    @extensibility(APPENDABLE)
+    struct Point2D {
+      float x;
+      float y;
+    };
+
+    @extensibility(APPENDABLE)
+    struct Point3D {
+      float x;
+      float y;
+      float z;
+    };
+
+    @extensibility(APPENDABLE)
+    struct Quaternion {
+      float x;
+      float y;
+      float z;
+      float w;
+    };
+
+    @extensibility(APPENDABLE)
+    struct Pose {
+      Point3D position;
+      Quaternion orientation;
+    };
+
+    @extensibility(APPENDABLE)
+    struct Vector3 {
+      float x;
+      float y;
+      float z;
+    };
+
+    @extensibility(APPENDABLE)
+    struct BoundingBox3D {
+      Pose center;     // Center pose of the bounding box
+      Vector3 size;    // Width, height, depth of the box
+    };
+
+    @extensibility(APPENDABLE)
+    struct ClusterInfo {
+      Point2D centroid;
+      float distance;
+      float angle;
+      uint8 risk_level;  // 0=NONE, 1=GREEN, 2=YELLOW, 3=RED
+      int32 id;
+      int32 age;
+      int32 lost_frames;
+      BoundingBox3D bounding_box;
+    };
+
+    @extensibility(APPENDABLE)
+    struct ClusterArray {
+      Header header;
+      sequence<ClusterInfo, 1024> clusters;
+    };
+
+    @extensibility(APPENDABLE)
+    struct BoundingBoxArray {
+      Header header;
+      sequence<BoundingBox3D, 1024> boxes;
+    };
+
   };
-
-  @extensibility(APPENDABLE)
-  struct Header {
-    Time stamp;
-    string<256> frame_id;
-  };
-
-  @extensibility(APPENDABLE)
-  struct PointField {
-    string<128> name;
-    uint32 offset;
-    uint8 datatype;
-    uint32 count;
-  };
-
-  @extensibility(APPENDABLE)
-  struct PointCloud2 {
-    Header header;
-    uint32 height;
-    uint32 width;
-    sequence<PointField, 64> fields;
-    boolean is_bigendian;
-    uint32 point_step;
-    uint32 row_step;
-    sequence<uint8, 1048576> data;
-    boolean is_dense;
-  };
-
-  @extensibility(APPENDABLE)
-  struct Point2D {
-    float x;
-    float y;
-  };
-
-  @extensibility(APPENDABLE)
-  struct Point3D {
-    float x;
-    float y;
-    float z;
-  };
-
-  @extensibility(APPENDABLE)
-  struct Quaternion {
-    float x;
-    float y;
-    float z;
-    float w;
-  };
-
-  @extensibility(APPENDABLE)
-  struct Pose {
-    Point3D position;
-    Quaternion orientation;
-  };
-
-  @extensibility(APPENDABLE)
-  struct Vector3 {
-    float x;
-    float y;
-    float z;
-  };
-
-  @extensibility(APPENDABLE)
-  struct BoundingBox3D {
-    Pose center;     // Center pose of the bounding box
-    Vector3 size;    // Width, height, depth of the box
-  };
-
-  @extensibility(APPENDABLE)
-  struct ClusterInfo {
-    Point2D centroid;
-    float distance;
-    float angle;
-    uint8 risk_level;  // 0=NONE, 1=GREEN, 2=YELLOW, 3=RED
-    int32 id;
-    int32 age;
-    int32 lost_frames;
-    BoundingBox3D bounding_box;
-  };
-
-  @extensibility(APPENDABLE)
-  struct ClusterArray {
-    Header header;
-    sequence<ClusterInfo, 256> clusters;
-  };
-
-  @extensibility(APPENDABLE)
-  struct BoundingBoxArray {
-    Header header;
-    sequence<BoundingBox3D, 256> boxes;
-  };
-
-};

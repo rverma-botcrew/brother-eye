@@ -356,6 +356,19 @@ std::vector<ClusterInfo> analyzeClusterRisk(const std::vector<ClusterData>& clus
   return cluster_info;
 }
 
+// --- Validation functions ---
+bool isValidFloat(float value) {
+  return std::isfinite(value) && !std::isnan(value);
+}
+
+bool validatePoint2D(const cv::Point2f& point) {
+  return isValidFloat(point.x) && isValidFloat(point.y);
+}
+
+bool validatePoint3D(const cv::Point3f& point) {
+  return isValidFloat(point.x) && isValidFloat(point.y) && isValidFloat(point.z);
+}
+
 // --- Convert to DDS Message ---
 DDSClusterArray convertToClusterArray(const std::vector<ClusterInfo>& clusters, 
                                      const std::map<int, TrackedObject>& tracked_objects) {
@@ -371,26 +384,87 @@ DDSClusterArray convertToClusterArray(const std::vector<ClusterInfo>& clusters,
   msg.header().stamp().nanosec(static_cast<uint32_t>(nanoseconds.count()));
   msg.header().frame_id("base_link");
   
-  // Convert clusters to DDS format
-  msg.clusters().resize(tracked_objects.size());
-  size_t idx = 0;
+  // Limit cluster count to avoid DDS sequence issues
+  const size_t max_clusters = 512; // Well under the 1024 limit
+  size_t cluster_count = std::min(tracked_objects.size(), max_clusters);
   
+  std::cout << "[FILTER] 🔍 Converting " << tracked_objects.size() << " tracked objects to DDS (max " << max_clusters << ")\n";
+  
+  // Convert clusters to DDS format - first count valid ones
+  std::vector<std::pair<int, TrackedObject>> valid_objects;
   for (const auto& [id, obj] : tracked_objects) {
-    DDSClusterInfo& dds_cluster = msg.clusters()[idx];
+    if (valid_objects.size() >= max_clusters) {
+      std::cout << "[FILTER] ⚠️ Reached maximum cluster limit, stopping at " << max_clusters << "\n";
+      break;
+    }
     
-    // Set centroid
-    dds_cluster.centroid().x(obj.last_centroid.x);
-    dds_cluster.centroid().y(obj.last_centroid.y);
+    // Validate centroid data
+    if (!validatePoint2D(obj.last_centroid)) {
+      std::cerr << "[FILTER] ⚠️ Invalid centroid for cluster " << id 
+                << " [" << obj.last_centroid.x << ", " << obj.last_centroid.y << "], skipping\n";
+      continue;
+    }
     
     // Calculate distance and angle
     float distance = std::hypot(obj.last_centroid.x, obj.last_centroid.y);
     float angle = std::atan2(obj.last_centroid.y, obj.last_centroid.x);
     
+    // Validate calculated values
+    if (!isValidFloat(distance) || !isValidFloat(angle)) {
+      std::cerr << "[FILTER] ⚠️ Invalid distance/angle for cluster " << id 
+                << " [dist=" << distance << ", angle=" << angle << "], skipping\n";
+      continue;
+    }
+    
+    // Validate object age and lost_frames (should be non-negative)
+    if (obj.age < 0 || obj.lost_frames < 0) {
+      std::cerr << "[FILTER] ⚠️ Invalid age/lost_frames for cluster " << id 
+                << " [age=" << obj.age << ", lost=" << obj.lost_frames << "], skipping\n";
+      continue;
+    }
+    
+    valid_objects.push_back({id, obj});
+  }
+  
+  std::cout << "[FILTER] 🔍 Found " << valid_objects.size() << " valid clusters for DDS\n";
+  
+  if (valid_objects.empty()) {
+    std::cout << "[FILTER] ⚠️ No valid clusters to publish\n";
+    msg.clusters().resize(0);
+    return msg;
+  }
+  
+  msg.clusters().resize(valid_objects.size());
+  size_t idx = 0;
+  
+  for (const auto& [id, obj] : valid_objects) {
+    std::cout << "[FILTER] 🔍 Processing cluster " << id << " at index " << idx << "\n";
+    
+    DDSClusterInfo& dds_cluster = msg.clusters()[idx];
+    
+    // Set centroid with additional validation
+    float centroid_x = obj.last_centroid.x;
+    float centroid_y = obj.last_centroid.y;
+    
+    // Clamp extreme values
+    centroid_x = std::max(-100.0f, std::min(100.0f, centroid_x));
+    centroid_y = std::max(-100.0f, std::min(100.0f, centroid_y));
+    
+    dds_cluster.centroid().x(centroid_x);
+    dds_cluster.centroid().y(centroid_y);
+    
+    // Calculate distance and angle with clamping
+    float distance = std::hypot(centroid_x, centroid_y);
+    float angle = std::atan2(centroid_y, centroid_x);
+    
+    // Clamp distance to reasonable range
+    distance = std::max(0.0f, std::min(200.0f, distance));
+    
     dds_cluster.distance(distance);
     dds_cluster.angle(angle);
     dds_cluster.id(id);
-    dds_cluster.age(obj.age);
-    dds_cluster.lost_frames(obj.lost_frames);
+    dds_cluster.age(std::max(0, obj.age));
+    dds_cluster.lost_frames(std::max(0, obj.lost_frames));
     
     // Set risk level
     uint8_t risk_level = 0; // NONE
@@ -404,17 +478,29 @@ DDSClusterArray convertToClusterArray(const std::vector<ClusterInfo>& clusters,
     dds_cluster.risk_level(risk_level);
     
     // Set bounding box (find corresponding cluster info or use defaults)
-    cv::Point3f bbox_center(obj.last_centroid.x, obj.last_centroid.y, 0.5f);
+    cv::Point3f bbox_center(centroid_x, centroid_y, 0.5f);
     cv::Point3f bbox_size(0.5f, 0.5f, 1.0f);
     
     // Try to find matching cluster info for bounding box data
     for (const auto& cluster : clusters) {
       if (cv::norm(cluster.centroid - obj.last_centroid) < 0.3f) {
-        bbox_center = cluster.bbox_center;
-        bbox_size = cluster.bbox_size;
+        if (validatePoint3D(cluster.bbox_center) && validatePoint3D(cluster.bbox_size)) {
+          bbox_center = cluster.bbox_center;
+          bbox_size = cluster.bbox_size;
+        }
         break;
       }
     }
+    
+    // Clamp bounding box center to reasonable values
+    bbox_center.x = std::max(-100.0f, std::min(100.0f, bbox_center.x));
+    bbox_center.y = std::max(-100.0f, std::min(100.0f, bbox_center.y));
+    bbox_center.z = std::max(-10.0f, std::min(10.0f, bbox_center.z));
+    
+    // Ensure reasonable bounding box size (minimum 1cm, maximum 50m)
+    bbox_size.x = std::max(0.01f, std::min(50.0f, bbox_size.x));
+    bbox_size.y = std::max(0.01f, std::min(50.0f, bbox_size.y));
+    bbox_size.z = std::max(0.01f, std::min(50.0f, bbox_size.z));
     
     // Set bounding box center (position)
     dds_cluster.bounding_box().center().position().x(bbox_center.x);
@@ -432,9 +518,13 @@ DDSClusterArray convertToClusterArray(const std::vector<ClusterInfo>& clusters,
     dds_cluster.bounding_box().size().y(bbox_size.y);
     dds_cluster.bounding_box().size().z(bbox_size.z);
     
+    std::cout << "[FILTER] 🔍 Cluster " << id << " data: centroid=[" << centroid_x << ", " << centroid_y 
+              << "], dist=" << distance << ", bbox_size=[" << bbox_size.x << ", " << bbox_size.y << ", " << bbox_size.z << "]\n";
+    
     ++idx;
   }
   
+  std::cout << "[FILTER] ✅ Converted " << idx << " clusters to DDS message\n";
   return msg;
 }
 
@@ -452,28 +542,51 @@ DDSBoundingBoxArray convertToBoundingBoxArray(const std::vector<ClusterInfo>& cl
   msg.header().stamp().nanosec(static_cast<uint32_t>(nanoseconds.count()));
   msg.header().frame_id("base_link");
   
-  // Convert bounding boxes
-  msg.boxes().resize(clusters.size());
+  // Convert bounding boxes - first filter valid ones
+  std::vector<ClusterInfo> valid_clusters;
+  for (const auto& cluster : clusters) {
+    if (validatePoint2D(cluster.centroid)) {
+      valid_clusters.push_back(cluster);
+    } else {
+      std::cerr << "[FILTER] ⚠️ Invalid cluster centroid, skipping from bbox array\n";
+    }
+  }
   
-  for (size_t i = 0; i < clusters.size(); ++i) {
-    const auto& cluster = clusters[i];
+  msg.boxes().resize(valid_clusters.size());
+  
+  for (size_t i = 0; i < valid_clusters.size(); ++i) {
+    const auto& cluster = valid_clusters[i];
     DDSBoundingBox3D& bbox = msg.boxes()[i];
     
-    // Set center position
-    bbox.center().position().x(cluster.bbox_center.x);
-    bbox.center().position().y(cluster.bbox_center.y);
-    bbox.center().position().z(cluster.bbox_center.z);
+    // Validate cluster data
+    if (!validatePoint3D(cluster.bbox_center) || !validatePoint3D(cluster.bbox_size)) {
+      std::cerr << "[FILTER] ⚠️ Invalid bounding box for cluster " << i << ", using defaults\n";
+      // Set default center position
+      bbox.center().position().x(cluster.centroid.x);
+      bbox.center().position().y(cluster.centroid.y);
+      bbox.center().position().z(0.5f);
+      
+      // Set default size
+      bbox.size().x(0.5f);
+      bbox.size().y(0.5f);
+      bbox.size().z(1.0f);
+    } else {
+      // Set center position
+      bbox.center().position().x(cluster.bbox_center.x);
+      bbox.center().position().y(cluster.bbox_center.y);
+      bbox.center().position().z(cluster.bbox_center.z);
+      
+      // Set size with minimum bounds
+      bbox.size().x(std::max(0.1f, cluster.bbox_size.x));
+      bbox.size().y(std::max(0.1f, cluster.bbox_size.y));
+      bbox.size().z(std::max(0.1f, cluster.bbox_size.z));
+    }
     
     // Set orientation (identity quaternion for axis-aligned boxes)
     bbox.center().orientation().x(0.0f);
     bbox.center().orientation().y(0.0f);
     bbox.center().orientation().z(0.0f);
     bbox.center().orientation().w(1.0f);
-    
-    // Set size
-    bbox.size().x(cluster.bbox_size.x);
-    bbox.size().y(cluster.bbox_size.y);
-    bbox.size().z(cluster.bbox_size.z);
   }
   
   return msg;
