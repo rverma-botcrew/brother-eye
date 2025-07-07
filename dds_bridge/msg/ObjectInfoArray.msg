@@ -1,0 +1,2 @@
+# TrackedObjectInfoArray.msg
+TrackedObjectInfo[] objects

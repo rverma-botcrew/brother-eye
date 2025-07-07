@@ -9,6 +9,8 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 find_package(CycloneDDS-CXX CONFIG REQUIRED)
 # find_package(iceoryx_bindings_c REQUIRED)
@@ -50,7 +52,9 @@ add_executable(dds2rosbridge_node
 
 ament_target_dependencies(dds2rosbridge_node
   rclcpp
-  sensor_msgs)
+  sensor_msgs
+  visualization_msgs
+  geometry_msgs)
 
 target_include_directories(dds2rosbridge_node
   PRIVATE
