@@ -1,55 +1,101 @@
 #include "kalman_tracker.h"
+#include <iostream>
 
 namespace brother_eye {
 
-KalmanTracker::KalmanTracker() {
-  kf_ = cv::KalmanFilter(4, 2);
-  state_ = cv::Mat::zeros(4, 1, CV_32F);
-  measurement_ = cv::Mat::zeros(2, 1, CV_32F);
+KalmanTracker::KalmanTracker() 
+    : kalman_filter_(KalmanConfig::kStateSize, KalmanConfig::kMeasurementSize),
+      state_(cv::Mat::zeros(KalmanConfig::kStateSize, 1, CV_32F)),
+      measurement_(cv::Mat::zeros(KalmanConfig::kMeasurementSize, 1, CV_32F)) {
+  
+  InitializeMatrices();
+}
 
-  kf_.transitionMatrix = (cv::Mat_<float>(4, 4) <<
-                         1, 0, 1, 0,
-                         0, 1, 0, 1,
-                         0, 0, 1, 0,
-                         0, 0, 0, 1);
-  kf_.measurementMatrix = cv::Mat::eye(2, 4, CV_32F);
-  setIdentity(kf_.processNoiseCov, cv::Scalar(1e-1));     // smoother prediction
-  setIdentity(kf_.measurementNoiseCov, cv::Scalar(5e-2));  // trust measurements less
-  setIdentity(kf_.errorCovPost, cv::Scalar(1));
+void KalmanTracker::InitializeMatrices() {
+  // Transition matrix for constant velocity model
+  // State: [x, y, vx, vy] -> [x+vx, y+vy, vx, vy]
+  kalman_filter_.transitionMatrix = (cv::Mat_<float>(4, 4) <<
+    1, 0, 1, 0,   // x_new = x + vx
+    0, 1, 0, 1,   // y_new = y + vy
+    0, 0, 1, 0,   // vx_new = vx
+    0, 0, 0, 1    // vy_new = vy
+  );
+  
+  // Measurement matrix - we only observe position [x, y]
+  kalman_filter_.measurementMatrix = cv::Mat::eye(KalmanConfig::kMeasurementSize, 
+                                                  KalmanConfig::kStateSize, CV_32F);
+  
+  // Process noise covariance - model uncertainty
+  setIdentity(kalman_filter_.processNoiseCov, cv::Scalar(KalmanConfig::kProcessNoise));
+  
+  // Measurement noise covariance - sensor uncertainty
+  setIdentity(kalman_filter_.measurementNoiseCov, cv::Scalar(KalmanConfig::kMeasurementNoise));
+  
+  // Initial error covariance
+  setIdentity(kalman_filter_.errorCovPost, cv::Scalar(KalmanConfig::kErrorCovariance));
 }
 
 cv::Point2f KalmanTracker::Update(const cv::Point2f& point) {
+  // Set measurement values
   measurement_.at<float>(0) = point.x;
   measurement_.at<float>(1) = point.y;
-
-  kf_.correct(measurement_);
-  cv::Mat prediction = kf_.predict();
-
+  
+  // Correct the state with the measurement
+  kalman_filter_.correct(measurement_);
+  
+  // Predict the next state
+  const cv::Mat prediction = kalman_filter_.predict();
+  
   return cv::Point2f(prediction.at<float>(0), prediction.at<float>(1));
 }
 
 cv::Point2f KalmanTracker::Predict() {
-  cv::Mat prediction = kf_.predict();
+  const cv::Mat prediction = kalman_filter_.predict();
   return cv::Point2f(prediction.at<float>(0), prediction.at<float>(1));
 }
 
 TrackedObject::TrackedObject(const cv::Point2f& initial_position)
-    : kalman_filter_(), last_centroid_(initial_position), age_(0), lost_frames_(0), active_(true) {
+    : kalman_filter_(), 
+      last_centroid_(initial_position), 
+      predicted_position_(initial_position),
+      age_(0), 
+      lost_frames_(0), 
+      active_(true) {
+  
+  // Initialize the Kalman filter with the first measurement
+  kalman_filter_.Update(initial_position);
 }
 
 void TrackedObject::Update(const cv::Point2f& new_position) {
-  last_centroid_ = kalman_filter_.Update(new_position);
+  // Update the filter with the new measurement
+  predicted_position_ = kalman_filter_.Update(new_position);
+  last_centroid_ = new_position;
+  
+  // Reset lost frames counter and increment age
   lost_frames_ = 0;
   ++age_;
 }
 
 void TrackedObject::Predict() {
-  last_centroid_ = kalman_filter_.Predict();
+  // Predict the next position without measurement
+  predicted_position_ = kalman_filter_.Predict();
+  last_centroid_ = predicted_position_;
+  
+  // Increment lost frames counter
   ++lost_frames_;
+  
+  // Deactivate object if lost for too long
+  if (lost_frames_ >= TrackingConfig::kMaxLostFrames) {
+    active_ = false;
+  }
 }
 
 float TrackedObject::DistanceTo(const cv::Point2f& point) const {
   return cv::norm(last_centroid_ - point);
+}
+
+bool TrackedObject::IsLost() const {
+  return lost_frames_ >= TrackingConfig::kMaxLostFrames;
 }
 
 }  // namespace brother_eye
