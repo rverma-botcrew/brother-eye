@@ -15,56 +15,249 @@
 
 namespace brother_eye {
 
+// Type aliases for cleaner code
 using PointT = pcl::PointXYZI;
 using CloudT = pcl::PointCloud<PointT>;
 using DDSPointCloud2 = pcl_dds_msgs::PointCloud2;
 
+// Point cloud processing configuration
+namespace ProcessingConfig {
+  // Voxel grid filtering
+  constexpr float kVoxelLeafSize = 0.05f;           ///< Voxel grid leaf size (5cm)
+  
+  // Z-axis filtering (height filtering)
+  constexpr float kZFilterMin = -2.0f;              ///< Minimum Z value (2m below sensor)
+  constexpr float kZFilterMax = 10.0f;              ///< Maximum Z value (10m above sensor)
+  
+  // Ground plane removal (RANSAC)
+  constexpr float kRansacDistanceThreshold = 0.02f; ///< RANSAC distance threshold (2cm)
+  constexpr int kRansacMaxIterations = 100;         ///< Maximum RANSAC iterations
+  
+  // Statistical outlier removal
+  constexpr int kStatisticalOutlierMeanK = 20;      ///< Number of neighbors for outlier detection
+  constexpr float kStatisticalOutlierStddevMul = 2.0f; ///< Standard deviation multiplier
+  
+  // Clustering parameters
+  constexpr float kClusterTolerance = 0.2f;         ///< Euclidean clustering tolerance (20cm)
+  constexpr int kMinClusterSize = 10;               ///< Minimum points per cluster
+  constexpr int kMaxClusterSize = 5000;             ///< Maximum points per cluster
+  
+  // Tracking parameters
+  constexpr int kMaxLostFrames = 5;                 ///< Max frames before object is dropped
+  constexpr float kTrackingMatchThreshold = 0.3f;   ///< Distance threshold for object matching
+}
+
+// Visualization configuration
+namespace VisualizationConfig {
+  constexpr int kDisplayRadius = 200;               ///< Display radius in pixels
+  constexpr int kDisplayPadding = 10;               ///< Padding around display
+  constexpr int kGridSpacing = 50;                  ///< Grid line spacing
+  constexpr int kAngleStepDegrees = 30;             ///< Angle grid step
+  constexpr float kMaxDisplayDistance = 10.0f;      ///< Maximum display distance (meters)
+  constexpr float kDistanceScale = 20.0f;           ///< Distance scaling factor
+}
+
+/**
+ * @brief Main point cloud processing pipeline
+ * 
+ * This class handles the complete point cloud processing workflow including:
+ * - Point cloud conversion and filtering
+ * - Cluster extraction with bounding boxes
+ * - Risk analysis and tracking
+ * - Visualization and output generation
+ */
 class PointCloudProcessor {
  public:
+  /**
+   * @brief Constructs a new PointCloudProcessor
+   */
   PointCloudProcessor();
+  
+  /**
+   * @brief Destructor
+   */
   ~PointCloudProcessor() = default;
   
-  // Main processing pipeline
+  // Delete copy constructor and assignment operator
+  PointCloudProcessor(const PointCloudProcessor&) = delete;
+  PointCloudProcessor& operator=(const PointCloudProcessor&) = delete;
+  
+  // ============================================================================
+  // Main Processing Pipeline
+  // ============================================================================
+  
+  /**
+   * @brief Main processing pipeline for point cloud data
+   * @param input_msg DDS point cloud message to process
+   * @return Processed point cloud with tracked objects
+   */
   CloudT::Ptr ProcessPointCloud(const DDSPointCloud2& input_msg);
   
-  // Individual processing steps
+  // ============================================================================
+  // Individual Processing Steps
+  // ============================================================================
+  
+  /**
+   * @brief Converts DDS point cloud message to PCL format
+   * @param msg DDS point cloud message
+   * @return PCL point cloud
+   */
   CloudT::Ptr ConvertToPcl(const DDSPointCloud2& msg);
+  
+  /**
+   * @brief Applies filtering pipeline to clean the point cloud
+   * @param input_cloud Raw point cloud to clean
+   * @return Cleaned point cloud
+   */
   CloudT::Ptr CleanCloud(const CloudT::Ptr& input_cloud);
+  
+  /**
+   * @brief Extracts clusters and calculates their bounding boxes
+   * @param cloud Cleaned point cloud
+   * @return Vector of cluster data with bounding boxes
+   */
   std::vector<ClusterData> ExtractClustersWithBoundingBoxes(const CloudT::Ptr& cloud);
+  
+  /**
+   * @brief Analyzes cluster risk levels and prints information
+   * @param cluster_data Vector of cluster data
+   * @return Vector of cluster information with risk analysis
+   */
   std::vector<ClusterInfo> AnalyzeClusterRisk(const std::vector<ClusterData>& cluster_data);
   
-  // Tracking functionality
+  // ============================================================================
+  // Tracking Functionality
+  // ============================================================================
+  
+  /**
+   * @brief Updates object tracking with new centroid positions
+   * @param centroids Vector of cluster centroids
+   */
   void UpdateTracking(const std::vector<cv::Point2f>& centroids);
+  
+  /**
+   * @brief Removes old trackers that have been lost too long
+   */
   void CleanupOldTrackers();
+  
+  /**
+   * @brief Creates a point cloud representing tracked objects
+   * @return Point cloud with tracked object positions
+   */
   CloudT::Ptr CreateTrackedPointCloud();
   
+  // ============================================================================
   // Visualization
+  // ============================================================================
+  
+  /**
+   * @brief Displays cluster risk analysis in a circular UI
+   * @param clusters Vector of cluster information to display
+   */
   void DisplayClusterRiskUi(const std::vector<ClusterInfo>& clusters);
   
-  // Getters
-  const std::map<int, TrackedObject>& GetTrackedObjects() const { return tracked_objects_; }
-  size_t GetFrameCount() const { return frame_count_; }
+  // ============================================================================
+  // Accessors
+  // ============================================================================
   
-  void IncrementFrameCount() { ++frame_count_; }
+  /**
+   * @brief Gets the currently tracked objects
+   * @return Const reference to tracked objects map
+   */
+  const std::map<int, TrackedObject>& GetTrackedObjects() const noexcept { 
+    return tracked_objects_; 
+  }
+  
+  /**
+   * @brief Gets the current frame count
+   * @return Current frame number
+   */
+  size_t GetFrameCount() const noexcept { 
+    return frame_count_; 
+  }
+  
+  /**
+   * @brief Increments the frame counter
+   */
+  void IncrementFrameCount() noexcept { 
+    ++frame_count_; 
+  }
+  
   
  private:
-  std::map<int, TrackedObject> tracked_objects_;
-  int next_id_;
-  size_t frame_count_;
+  // ============================================================================
+  // Member Variables
+  // ============================================================================
   
-  // Configuration constants
-  static constexpr float kVoxelLeafSize = 0.05f;
-  static constexpr float kZFilterMin = -2.0f;
-  static constexpr float kZFilterMax = 10.0f;
-  static constexpr float kRansacDistanceThreshold = 0.02f;
-  static constexpr int kRansacMaxIterations = 100;
-  static constexpr int kStatisticalOutlierMeanK = 20;
-  static constexpr float kStatisticalOutlierStddevMul = 2.0f;
-  static constexpr float kClusterTolerance = 0.2f;
-  static constexpr int kMinClusterSize = 10;
-  static constexpr int kMaxClusterSize = 5000;
-  static constexpr int kMaxLostFrames = 5;
-  static constexpr float kTrackingMatchThreshold = 0.3f;
+  std::map<int, TrackedObject> tracked_objects_;  ///< Currently tracked objects
+  int next_id_;                                   ///< Next available object ID
+  size_t frame_count_;                            ///< Current frame counter
+  
+  // ============================================================================
+  // Private Helper Methods
+  // ============================================================================
+  
+  /**
+   * @brief Applies voxel grid filtering to reduce point density
+   * @param cloud Input point cloud
+   * @return Voxel-filtered point cloud
+   */
+  CloudT::Ptr ApplyVoxelFiltering(const CloudT::Ptr& cloud);
+  
+  /**
+   * @brief Applies pass-through filtering to remove points outside Z range
+   * @param cloud Input point cloud
+   * @return Range-filtered point cloud
+   */
+  CloudT::Ptr ApplyRangeFiltering(const CloudT::Ptr& cloud);
+  
+  /**
+   * @brief Removes ground plane using RANSAC plane segmentation
+   * @param cloud Input point cloud
+   * @return Point cloud with ground plane removed
+   */
+  CloudT::Ptr RemoveGroundPlane(const CloudT::Ptr& cloud);
+  
+  /**
+   * @brief Removes statistical outliers from point cloud
+   * @param cloud Input point cloud
+   * @return Point cloud with outliers removed
+   */
+  CloudT::Ptr RemoveStatisticalOutliers(const CloudT::Ptr& cloud);
+  
+  /**
+   * @brief Calculates bounding box for a cluster
+   * @param cloud Point cloud
+   * @param indices Point indices belonging to the cluster
+   * @param cluster_data Output cluster data to populate
+   */
+  void CalculateClusterBoundingBox(const CloudT::Ptr& cloud, 
+                                   const std::vector<int>& indices,
+                                   ClusterData& cluster_data);
+  
+  /**
+   * @brief Draws the grid and reference lines for visualization
+   * @param img Output image to draw on
+   * @param center Center point of the display
+   * @param radius Display radius
+   */
+  void DrawVisualizationGrid(cv::Mat& img, const cv::Point& center, int radius);
+  
+  /**
+   * @brief Draws a single cluster on the visualization
+   * @param img Output image to draw on
+   * @param cluster Cluster information
+   * @param center Center point of the display
+   * @param radius Display radius
+   */
+  void DrawCluster(cv::Mat& img, const ClusterInfo& cluster, 
+                   const cv::Point& center, int radius);
+
+  /**
+   * @brief Calculates adaptive threshold for object matching
+   * @return Adaptive threshold value based on current tracker count
+   */
+  float CalculateAdaptiveThreshold() const;
 };
 
 }  // namespace brother_eye
