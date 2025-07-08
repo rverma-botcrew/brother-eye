@@ -1,5 +1,5 @@
-#ifndef POINTCLOUD_PROCESSOR_H_
-#define POINTCLOUD_PROCESSOR_H_
+#ifndef POINTCLOUD_PROCESSOR_HPP_
+#define POINTCLOUD_PROCESSOR_HPP_
 
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -9,8 +9,8 @@
 #include <memory>
 #include <set>
 
-#include "cluster_info.h"
-#include "kalman_tracker.h"
+#include "cluster_info.hpp"
+#include "kalman_tracker.hpp"
 #include "dds_pcl.hpp"
 
 namespace brother_eye {
@@ -262,4 +262,4 @@ class PointCloudProcessor {
 
 }  // namespace brother_eye
 
-#endif  // POINTCLOUD_PROCESSOR_H_
+#endif  // POINTCLOUD_PROCESSOR_HPP_

@@ -1,5 +1,5 @@
-#ifndef KALMAN_TRACKER_H_
-#define KALMAN_TRACKER_H_
+#ifndef KALMAN_TRACKER_HPP_
+#define KALMAN_TRACKER_HPP_
 
 #include <opencv2/opencv.hpp>
 
@@ -123,4 +123,4 @@ class TrackedObject {
 
 }  // namespace brother_eye
 
-#endif  // KALMAN_TRACKER_H_
+#endif  // KALMAN_TRACKER_HPP_

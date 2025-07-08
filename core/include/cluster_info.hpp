@@ -1,5 +1,5 @@
-#ifndef CLUSTER_INFO_H_
-#define CLUSTER_INFO_H_
+#ifndef CLUSTER_INFO_HPP_
+#define CLUSTER_INFO_HPP_
 
 #include <opencv2/opencv.hpp>
 #include <vector>
@@ -118,4 +118,4 @@ class ClusterData {
 
 }  // namespace brother_eye
 
-#endif  // CLUSTER_INFO_H_
+#endif  // CLUSTER_INFO_HPP_

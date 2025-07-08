@@ -1,4 +1,4 @@
-#include "cluster_info.h"
+#include "cluster_info.hpp"
 #include <cmath>
 
 namespace brother_eye {

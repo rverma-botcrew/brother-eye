@@ -1,13 +1,13 @@
-#ifndef JSON_EXPORTER_H_
-#define JSON_EXPORTER_H_
+#ifndef JSON_EXPORTER_HPP_
+#define JSON_EXPORTER_HPP_
 
 #include <string>
 #include <vector>
 #include <map>
 #include <opencv2/opencv.hpp>
 
-#include "cluster_info.h"
-#include "kalman_tracker.h"
+#include "cluster_info.hpp"
+#include "kalman_tracker.hpp"
 
 namespace brother_eye {
 
@@ -123,4 +123,4 @@ class JsonExporter {
 
 }  // namespace brother_eye
 
-#endif  // JSON_EXPORTER_H_
+#endif  // JSON_EXPORTER_HPP_

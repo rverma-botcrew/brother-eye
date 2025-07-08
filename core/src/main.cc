@@ -3,9 +3,9 @@
 #include <thread>
 #include <chrono>
 
-#include "pointcloud_processor.h"
-#include "json_exporter.h"
-#include "dds_publisher.h"
+#include "pointcloud_processor.hpp"
+#include "json_exporter.hpp"
+#include "dds_publisher.hpp"
 
 namespace {
 static bool g_running = true;

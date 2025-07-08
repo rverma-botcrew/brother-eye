@@ -1,4 +1,4 @@
-#include "pointcloud_processor.h"
+#include "pointcloud_processor.hpp"
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/passthrough.h>

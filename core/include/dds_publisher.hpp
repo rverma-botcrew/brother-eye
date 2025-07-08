@@ -9,8 +9,8 @@
 #include <map>
 #include <memory>
 
-#include "cluster_info.h"
-#include "kalman_tracker.h"
+#include "cluster_info.hpp"
+#include "kalman_tracker.hpp"
 #include "dds_pcl.hpp"
 
 namespace brother_eye {

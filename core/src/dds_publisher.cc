@@ -1,4 +1,4 @@
-#include "dds_publisher.h"
+#include "dds_publisher.hpp"
 
 #include <iostream>
 #include <algorithm>
