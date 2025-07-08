@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "cluster_info.hpp"
+#include "constants.hpp"
 
 namespace brother_eye {
 
@@ -31,9 +32,9 @@ class ClusterAnalyzer {
    */
   static std::vector<ClusterData> ExtractClustersWithBoundingBoxes(
       const CloudT::Ptr& cloud,
-      float tolerance = 0.2f,
-      int min_size = 10,
-      int max_size = 5000);
+      float tolerance = ClusteringConstants::kDefaultTolerance,
+      int min_size = ClusteringConstants::kDefaultMinClusterSize,
+      int max_size = ClusteringConstants::kDefaultMaxClusterSize);
   
   /**
    * @brief Analyzes cluster risk levels based on distance and size

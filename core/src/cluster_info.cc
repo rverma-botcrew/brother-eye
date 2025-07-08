@@ -11,18 +11,18 @@ ClusterInfo::ClusterInfo(const cv::Point2f& centroid, int cluster_id)
   CalculateRisk();
   
   // Default bounding box (will be calculated later)
-  bounding_box_center_ = cv::Point3f(centroid.x, centroid.y, DefaultBoundingBox::kDefaultHeight);
-  bounding_box_size_ = cv::Point3f(DefaultBoundingBox::kDefaultWidth, 
-                                   DefaultBoundingBox::kDefaultDepth, 
-                                   DefaultBoundingBox::kDefaultTotalHeight);
+  bounding_box_center_ = cv::Point3f(centroid.x, centroid.y, ClusterInfoConstants::kDefaultHeight);
+  bounding_box_size_ = cv::Point3f(ClusterInfoConstants::kDefaultWidth, 
+                                   ClusterInfoConstants::kDefaultDepth, 
+                                   ClusterInfoConstants::kDefaultTotalHeight);
 }
 
 void ClusterInfo::CalculateRisk() {
-  if (distance_ < RiskThresholds::kRedRiskDistance) {
+  if (distance_ < ClusterInfoConstants::kRedRiskDistance) {
     risk_level_ = RiskLevel::kRed;
-  } else if (distance_ < RiskThresholds::kYellowRiskDistance) {
+  } else if (distance_ < ClusterInfoConstants::kYellowRiskDistance) {
     risk_level_ = RiskLevel::kYellow;
-  } else if (distance_ < RiskThresholds::kGreenRiskDistance) {
+  } else if (distance_ < ClusterInfoConstants::kGreenRiskDistance) {
     risk_level_ = RiskLevel::kGreen;
   } else {
     risk_level_ = RiskLevel::kNone;

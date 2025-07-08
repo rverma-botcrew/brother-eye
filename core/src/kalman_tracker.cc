@@ -86,7 +86,7 @@ void TrackedObject::Predict() {
   ++lost_frames_;
   
   // Deactivate object if lost for too long
-  if (lost_frames_ >= TrackingConfig::kMaxLostFrames) {
+  if (lost_frames_ >= TrackingConstants::kMaxLostFrames) {
     active_ = false;
   }
 }
@@ -96,7 +96,7 @@ float TrackedObject::DistanceTo(const cv::Point2f& point) const {
 }
 
 bool TrackedObject::IsLost() const {
-  return lost_frames_ >= TrackingConfig::kMaxLostFrames;
+  return lost_frames_ >= TrackingConstants::kMaxLostFrames;
 }
 
 }  // namespace brother_eye

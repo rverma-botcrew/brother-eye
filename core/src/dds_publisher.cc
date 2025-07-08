@@ -53,11 +53,11 @@ DdsPublisher::DdsPublisher()
 void DdsPublisher::Initialize() {
   auto reader_qos = dds::sub::qos::DataReaderQos()
     << dds::core::policy::Reliability::Reliable()
-    << dds::core::policy::History::KeepLast(kHistoryDepth);
+    << dds::core::policy::History::KeepLast(DdsPublisherConstants::kHistoryDepth);
 
   auto writer_qos = dds::pub::qos::DataWriterQos()
     << dds::core::policy::Reliability::Reliable()
-    << dds::core::policy::History::KeepLast(kHistoryDepth);
+    << dds::core::policy::History::KeepLast(DdsPublisherConstants::kHistoryDepth);
 
   reader_ = std::make_shared<dds::sub::DataReader<DDSPointCloud2>>(subscriber_, input_topic_, reader_qos);
   writer_ = std::make_shared<dds::pub::DataWriter<DDSPointCloud2>>(publisher_, output_topic_, writer_qos);
@@ -127,15 +127,15 @@ DDSClusterArray DdsPublisher::ConvertToClusterArray(const std::vector<ClusterInf
   SetMessageHeader(msg);
   
   // Limit cluster count to avoid DDS sequence issues
-  size_t cluster_count = std::min(tracked_objects.size(), kMaxClusters);
+  size_t cluster_count = std::min(tracked_objects.size(), DdsPublisherConstants::kMaxClusters);
   
-  std::cout << "[FILTER] 🔍 Converting " << tracked_objects.size() << " tracked objects to DDS (max " << kMaxClusters << ")\n";
+  std::cout << "[FILTER] 🔍 Converting " << tracked_objects.size() << " tracked objects to DDS (max " << DdsPublisherConstants::kMaxClusters << ")\n";
   
   // Convert clusters to DDS format - first count valid ones
   std::vector<std::pair<int, TrackedObject>> valid_objects;
   for (const auto& [id, obj] : tracked_objects) {
-    if (valid_objects.size() >= kMaxClusters) {
-      std::cout << "[FILTER] ⚠️ Reached maximum cluster limit, stopping at " << kMaxClusters << "\n";
+    if (valid_objects.size() >= DdsPublisherConstants::kMaxClusters) {
+      std::cout << "[FILTER] ⚠️ Reached maximum cluster limit, stopping at " << DdsPublisherConstants::kMaxClusters << "\n";
       break;
     }
     
@@ -188,8 +188,8 @@ DDSClusterArray DdsPublisher::ConvertToClusterArray(const std::vector<ClusterInf
     float centroid_y = tracked_obj.GetLastCentroid().y;
     
     // Clamp coordinates to reasonable ranges
-    centroid_x = std::max(kMinCoordinate, std::min(kMaxCoordinate, centroid_x));
-    centroid_y = std::max(kMinCoordinate, std::min(kMaxCoordinate, centroid_y));
+    centroid_x = std::max(DdsPublisherConstants::kMinCoordinate, std::min(DdsPublisherConstants::kMaxCoordinate, centroid_x));
+    centroid_y = std::max(DdsPublisherConstants::kMinCoordinate, std::min(DdsPublisherConstants::kMaxCoordinate, centroid_y));
     
     dds_cluster.centroid().x(centroid_x);
     dds_cluster.centroid().y(centroid_y);
@@ -199,7 +199,7 @@ DDSClusterArray DdsPublisher::ConvertToClusterArray(const std::vector<ClusterInf
     float angle = std::atan2(centroid_y, centroid_x);
     
     // Clamp distance to reasonable range
-    distance = std::max(0.0f, std::min(kMaxDistance, distance));
+    distance = std::max(0.0f, std::min(DdsPublisherConstants::kMaxDistance, distance));
     
     dds_cluster.distance(distance);
     dds_cluster.angle(angle);
@@ -209,22 +209,22 @@ DDSClusterArray DdsPublisher::ConvertToClusterArray(const std::vector<ClusterInf
     
     // Set risk level based on distance thresholds
     uint8_t risk_level = JsonConstants::kNoneRiskLevel;  // NONE
-    if (distance < kRedRiskDistance) {
+    if (distance < DdsPublisherConstants::kRedRiskDistance) {
       risk_level = JsonConstants::kRedRiskLevel;  // RED
-    } else if (distance < kYellowRiskDistance) {
+    } else if (distance < DdsPublisherConstants::kYellowRiskDistance) {
       risk_level = JsonConstants::kYellowRiskLevel;  // YELLOW
-    } else if (distance < kGreenRiskDistance) {
+    } else if (distance < DdsPublisherConstants::kGreenRiskDistance) {
       risk_level = JsonConstants::kGreenRiskLevel;  // GREEN
     }
     dds_cluster.risk_level(risk_level);
     
     // Set default bounding box if no matching cluster found
-    cv::Point3f bbox_center(centroid_x, centroid_y, kDefaultZHeight);
-    cv::Point3f bbox_size(kDefaultBboxSize, kDefaultBboxSize, 1.0f);
+    cv::Point3f bbox_center(centroid_x, centroid_y, DdsPublisherConstants::kDefaultZHeight);
+    cv::Point3f bbox_size(DdsPublisherConstants::kDefaultBboxSize, DdsPublisherConstants::kDefaultBboxSize, 1.0f);
     
     // Try to find matching cluster info for bounding box data
     for (const auto& cluster : clusters) {
-      if (cv::norm(cluster.GetCentroid() - tracked_obj.GetLastCentroid()) < kClusterMatchDistance) {
+      if (cv::norm(cluster.GetCentroid() - tracked_obj.GetLastCentroid()) < DdsPublisherConstants::kClusterMatchDistance) {
         if (ValidatePoint3D(cluster.GetBoundingBoxCenter()) && ValidatePoint3D(cluster.GetBoundingBoxSize())) {
           bbox_center = cluster.GetBoundingBoxCenter();
           bbox_size = cluster.GetBoundingBoxSize();
@@ -234,14 +234,14 @@ DDSClusterArray DdsPublisher::ConvertToClusterArray(const std::vector<ClusterInf
     }
     
     // Clamp bounding box center to reasonable values
-    bbox_center.x = std::max(kMinCoordinate, std::min(kMaxCoordinate, bbox_center.x));
-    bbox_center.y = std::max(kMinCoordinate, std::min(kMaxCoordinate, bbox_center.y));
-    bbox_center.z = std::max(kMinZCoordinate, std::min(kMaxZCoordinate, bbox_center.z));
+    bbox_center.x = std::max(DdsPublisherConstants::kMinCoordinate, std::min(DdsPublisherConstants::kMaxCoordinate, bbox_center.x));
+    bbox_center.y = std::max(DdsPublisherConstants::kMinCoordinate, std::min(DdsPublisherConstants::kMaxCoordinate, bbox_center.y));
+    bbox_center.z = std::max(DdsPublisherConstants::kMinZCoordinate, std::min(DdsPublisherConstants::kMaxZCoordinate, bbox_center.z));
     
     // Ensure reasonable bounding box size
-    bbox_size.x = std::max(kMinBboxSize, std::min(kMaxBboxSize, bbox_size.x));
-    bbox_size.y = std::max(kMinBboxSize, std::min(kMaxBboxSize, bbox_size.y));
-    bbox_size.z = std::max(kMinBboxSize, std::min(kMaxBboxSize, bbox_size.z));
+    bbox_size.x = std::max(DdsPublisherConstants::kMinBboxSize, std::min(DdsPublisherConstants::kMaxBboxSize, bbox_size.x));
+    bbox_size.y = std::max(DdsPublisherConstants::kMinBboxSize, std::min(DdsPublisherConstants::kMaxBboxSize, bbox_size.y));
+    bbox_size.z = std::max(DdsPublisherConstants::kMinBboxSize, std::min(DdsPublisherConstants::kMaxBboxSize, bbox_size.z));
     
     // Set bounding box center (position)
     dds_cluster.bounding_box().center().position().x(bbox_center.x);
@@ -297,11 +297,11 @@ DDSBoundingBoxArray DdsPublisher::ConvertToBoundingBoxArray(const std::vector<Cl
       // Set default center position
       bounding_box.center().position().x(cluster.GetCentroid().x);
       bounding_box.center().position().y(cluster.GetCentroid().y);
-      bounding_box.center().position().z(kDefaultZHeight);
+      bounding_box.center().position().z(DdsPublisherConstants::kDefaultZHeight);
       
       // Set default size
-      bounding_box.size().x(kDefaultBboxSize);
-      bounding_box.size().y(kDefaultBboxSize);
+      bounding_box.size().x(DdsPublisherConstants::kDefaultBboxSize);
+      bounding_box.size().y(DdsPublisherConstants::kDefaultBboxSize);
       bounding_box.size().z(1.0f);
     } else {
       // Set center position
@@ -310,9 +310,9 @@ DDSBoundingBoxArray DdsPublisher::ConvertToBoundingBoxArray(const std::vector<Cl
       bounding_box.center().position().z(cluster.GetBoundingBoxCenter().z);
       
       // Set size with minimum bounds
-      bounding_box.size().x(std::max(kMinBboxSizeForArray, cluster.GetBoundingBoxSize().x));
-      bounding_box.size().y(std::max(kMinBboxSizeForArray, cluster.GetBoundingBoxSize().y));
-      bounding_box.size().z(std::max(kMinBboxSizeForArray, cluster.GetBoundingBoxSize().z));
+      bounding_box.size().x(std::max(DdsPublisherConstants::kMinBboxSizeForArray, cluster.GetBoundingBoxSize().x));
+      bounding_box.size().y(std::max(DdsPublisherConstants::kMinBboxSizeForArray, cluster.GetBoundingBoxSize().y));
+      bounding_box.size().z(std::max(DdsPublisherConstants::kMinBboxSizeForArray, cluster.GetBoundingBoxSize().z));
     }
     
     // Set orientation (identity quaternion for axis-aligned boxes)

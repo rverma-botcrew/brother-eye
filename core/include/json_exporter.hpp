@@ -8,15 +8,9 @@
 
 #include "cluster_info.hpp"
 #include "kalman_tracker.hpp"
+#include "constants.hpp"
 
 namespace brother_eye {
-
-// Constants for JSON export configuration
-namespace JsonExportConfig {
-  constexpr int kDefaultFloatPrecision = 3;      ///< Default decimal precision for float values
-  constexpr float kClusterMatchThreshold = 0.3f;  ///< Distance threshold for matching clusters to tracked objects
-  constexpr const char* kDefaultOutputFile = "/tmp/clusters.json";  ///< Default output file path
-}
 
 /**
  * @brief Handles exporting cluster information to JSON format
@@ -50,7 +44,7 @@ class JsonExporter {
    * @param filename Output file path (default: /tmp/clusters.json)
    */
   void PublishJsonToFile(const std::string& json_data, 
-                        const std::string& filename = JsonExportConfig::kDefaultOutputFile);
+                        const std::string& filename = JsonConstants::kDefaultOutputFile);
   
   /**
    * @brief Publishes JSON data to console output
@@ -72,7 +66,7 @@ class JsonExporter {
    * @param precision Number of decimal places (default: 3)
    * @return Formatted float as string
    */
-  std::string FormatFloat(float value, int precision = JsonExportConfig::kDefaultFloatPrecision);
+  std::string FormatFloat(float value, int precision = JsonConstants::kDefaultFloatPrecision);
   
   /**
    * @brief Converts a single cluster to JSON format
@@ -83,9 +77,9 @@ class JsonExporter {
    * @return JSON string representation of the cluster
    */
   std::string ClusterInfoToJson(const ClusterInfo& cluster, 
-                               int tracked_id = -1, 
-                               int age = 0, 
-                               int lost_frames = 0);
+                               int tracked_id = JsonConstants::kInvalidTrackingId, 
+                               int age = JsonConstants::kInitialAge, 
+                               int lost_frames = JsonConstants::kInitialLostFrames);
   
   /**
    * @brief Generates timestamp information for JSON output

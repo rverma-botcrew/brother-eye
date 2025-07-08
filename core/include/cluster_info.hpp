@@ -3,23 +3,9 @@
 
 #include <opencv2/opencv.hpp>
 #include <vector>
+#include "constants.hpp"
 
 namespace brother_eye {
-
-// Risk assessment distance thresholds (in meters)
-namespace RiskThresholds {
-  constexpr float kRedRiskDistance = 1.5f;     ///< Distance threshold for red (high) risk
-  constexpr float kYellowRiskDistance = 2.0f;  ///< Distance threshold for yellow (medium) risk
-  constexpr float kGreenRiskDistance = 5.0f;   ///< Distance threshold for green (low) risk
-}
-
-// Default bounding box parameters
-namespace DefaultBoundingBox {
-  constexpr float kDefaultHeight = 0.5f;       ///< Default height center (meters)
-  constexpr float kDefaultWidth = 0.5f;        ///< Default width (meters)
-  constexpr float kDefaultDepth = 0.5f;        ///< Default depth (meters)
-  constexpr float kDefaultTotalHeight = 1.0f;  ///< Default total height (meters)
-}
 
 /**
  * @brief Enumeration representing different risk levels for detected objects

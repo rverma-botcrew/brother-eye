@@ -34,7 +34,7 @@ int main() {
     // Main processing loop
     while (g_running) {
       auto samples = dds_publisher.GetReader()->take();
-      if (samples.length() == brother_eye::DataConversionConstants::kZeroPointCount) {
+      if (samples.length() == 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(brother_eye::SystemConstants::kMainLoopDelayMs));
         continue;
       }

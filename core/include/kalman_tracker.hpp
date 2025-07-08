@@ -2,23 +2,9 @@
 #define KALMAN_TRACKER_HPP_
 
 #include <opencv2/opencv.hpp>
+#include "constants.hpp"
 
 namespace brother_eye {
-
-// Kalman filter configuration constants
-namespace KalmanConfig {
-  constexpr int kStateSize = 4;        ///< State vector size [x, y, vx, vy]
-  constexpr int kMeasurementSize = 2;  ///< Measurement vector size [x, y]
-  constexpr float kProcessNoise = 1e-1f;      ///< Process noise covariance
-  constexpr float kMeasurementNoise = 5e-2f;  ///< Measurement noise covariance
-  constexpr float kErrorCovariance = 1.0f;    ///< Initial error covariance
-}
-
-// Tracking configuration constants
-namespace TrackingConfig {
-  constexpr int kMaxLostFrames = 5;        ///< Maximum frames before object is considered lost
-  constexpr float kMaxTrackingDistance = 2.0f;  ///< Maximum distance for object association
-}
 
 /**
  * @brief Kalman filter implementation for 2D position tracking

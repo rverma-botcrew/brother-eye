@@ -48,9 +48,9 @@ namespace FilteringConstants {
 // =============================================================================
 namespace ClusteringConstants {
   // Euclidean clustering
-  constexpr float kDefaultTolerance = 0.8f;          ///< Default cluster tolerance (80cm)
-  constexpr int kDefaultMinClusterSize = 3;          ///< Default minimum cluster size (points)
-  constexpr int kDefaultMaxClusterSize = 10000;      ///< Default maximum cluster size (points)
+  constexpr float kDefaultTolerance = 0.2f;          ///< Default cluster tolerance
+  constexpr int kDefaultMinClusterSize = 10;         ///< Default minimum cluster size (points)
+  constexpr int kDefaultMaxClusterSize = 10000;       ///< Default maximum cluster size (points)
   
   // Bounding box
   constexpr float kMinBoundingBoxDimension = 0.1f;   ///< Minimum bounding box dimension (10cm)
@@ -66,6 +66,39 @@ namespace ClusteringConstants {
 }
 
 // =============================================================================
+// CLUSTER INFO CONSTANTS (from cluster_info.hpp)
+// =============================================================================
+namespace ClusterInfoConstants {
+  // Risk distance thresholds
+  constexpr float kRedRiskDistance = 1.5f;           ///< Distance threshold for red (high) risk
+  constexpr float kYellowRiskDistance = 2.0f;        ///< Distance threshold for yellow (medium) risk
+  constexpr float kGreenRiskDistance = 5.0f;         ///< Distance threshold for green (low) risk
+  
+  // Default bounding box dimensions
+  constexpr float kDefaultHeight = 0.5f;             ///< Default height center (meters)
+  constexpr float kDefaultWidth = 0.5f;              ///< Default width (meters)
+  constexpr float kDefaultDepth = 0.5f;              ///< Default depth (meters)
+  constexpr float kDefaultTotalHeight = 1.0f;        ///< Default total height (meters)
+  
+  // Risk level enumeration values
+  constexpr int kNoneRiskValue = 0;                  ///< No risk detected
+  constexpr int kGreenRiskValue = 1;                 ///< Low risk - safe distance
+  constexpr int kYellowRiskValue = 2;                ///< Medium risk - caution required
+  constexpr int kRedRiskValue = 3;                   ///< High risk - immediate attention required
+}
+
+// =============================================================================
+// KALMAN FILTER CONSTANTS (from kalman_tracker.hpp)
+// =============================================================================
+namespace KalmanConfig {
+  constexpr int kStateSize = 4;                      ///< State vector size [x, y, vx, vy]
+  constexpr int kMeasurementSize = 2;                ///< Measurement vector size [x, y]
+  constexpr float kProcessNoise = 1e-1f;             ///< Process noise covariance
+  constexpr float kMeasurementNoise = 5e-2f;         ///< Measurement noise covariance
+  constexpr float kErrorCovariance = 1.0f;           ///< Initial error covariance
+}
+
+// =============================================================================
 // TRACKING CONSTANTS
 // =============================================================================
 namespace TrackingConstants {
@@ -75,6 +108,10 @@ namespace TrackingConstants {
   constexpr float kMinMatchingThreshold = 0.4f;      ///< Minimum matching threshold
   constexpr int kInitialObjectId = 0;                ///< Initial object ID counter
   constexpr int kInvalidTrackerId = -1;              ///< Invalid tracker ID indicator
+  
+  // Tracking configuration (from kalman_tracker.hpp)
+  constexpr int kMaxLostFrames = 5;                  ///< Maximum frames before object is considered lost
+  constexpr float kMaxTrackingDistance = 2.0f;      ///< Maximum distance for object association
   
   // Tracked object visualization
   constexpr float kTrackedPointZ = 0.0f;             ///< Z coordinate for tracked object markers
@@ -95,6 +132,39 @@ namespace TrackingConstants {
   constexpr int kInitialAge = 0;                     ///< Initial age for new tracked objects
   constexpr int kInitialLostFrames = 0;              ///< Initial lost frames counter
   constexpr int kResetLostFrames = 0;                ///< Reset value for lost frames counter
+}
+
+// =============================================================================
+// DDS PUBLISHER CONSTANTS (from dds_publisher.hpp)
+// =============================================================================
+namespace DdsPublisherConstants {
+  // DDS configuration
+  constexpr size_t kMaxClusters = 512;               ///< Maximum number of clusters
+  constexpr int kHistoryDepth = 10;                  ///< History depth for DDS
+  
+  // Validation and matching
+  constexpr float kClusterMatchDistance = 0.3f;      ///< Distance threshold for cluster matching
+  
+  // Risk distance thresholds (duplicated from ClusterInfoConstants for compatibility)
+  constexpr float kRedRiskDistance = 1.5f;           ///< Distance threshold for red (high) risk
+  constexpr float kYellowRiskDistance = 2.0f;        ///< Distance threshold for yellow (medium) risk
+  constexpr float kGreenRiskDistance = 5.0f;         ///< Distance threshold for green (low) risk
+  
+  // Coordinate limits
+  constexpr float kMaxCoordinate = 100.0f;           ///< Maximum coordinate value
+  constexpr float kMinCoordinate = -100.0f;          ///< Minimum coordinate value
+  constexpr float kMaxDistance = 200.0f;             ///< Maximum distance value
+  constexpr float kMaxZCoordinate = 10.0f;           ///< Maximum Z coordinate
+  constexpr float kMinZCoordinate = -10.0f;          ///< Minimum Z coordinate
+  
+  // Default values
+  constexpr float kDefaultBboxSize = 0.5f;           ///< Default bounding box size
+  constexpr float kDefaultZHeight = 0.5f;            ///< Default Z height
+  
+  // Bounding box size limits
+  constexpr float kMinBboxSize = 0.01f;              ///< Minimum bounding box size
+  constexpr float kMaxBboxSize = 50.0f;              ///< Maximum bounding box size
+  constexpr float kMinBboxSizeForArray = 0.1f;       ///< Minimum bounding box size for array
 }
 
 // =============================================================================
@@ -123,7 +193,7 @@ namespace VisualizationConstants {
   constexpr int kDisplayRadius = 200;                ///< Display image radius (pixels)
   constexpr int kDisplayPadding = 50;                ///< Display image padding (pixels)
   constexpr int kDisplayImageChannels = 3;           ///< Number of channels in display image (RGB)
-  constexpr int kDisplayImageType = CV_8UC3;         ///< OpenCV image type for display
+  constexpr int kDisplayImageType = CV_8UC(3);      ///< OpenCV image type for display
   
   // Colors (BGR format for OpenCV)
   constexpr int kBackgroundColorB = 30;              ///< Background color - Blue channel
@@ -143,12 +213,13 @@ namespace VisualizationConstants {
 }
 
 // =============================================================================
-// JSON EXPORT CONSTANTS
+// JSON EXPORT CONSTANTS (from json_exporter.hpp)
 // =============================================================================
 namespace JsonConstants {
   // Formatting
   constexpr int kDefaultFloatPrecision = 3;          ///< Default decimal precision for float values
   constexpr float kClusterMatchThreshold = 0.3f;     ///< Distance threshold for matching clusters
+  constexpr const char* kDefaultOutputFile = "/tmp/clusters.json";  ///< Default output file path
   constexpr int kInvalidTrackingId = -1;             ///< Invalid tracking ID
   constexpr int kInitialAge = 0;                     ///< Initial age for new objects
   constexpr int kInitialLostFrames = 0;              ///< Initial lost frames counter

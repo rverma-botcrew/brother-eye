@@ -12,6 +12,7 @@
 #include "cluster_info.hpp"
 #include "kalman_tracker.hpp"
 #include "dds_pcl.hpp"
+#include "constants.hpp"
 
 namespace brother_eye {
 
@@ -67,28 +68,6 @@ class DdsPublisher {
   bool IsValidFloat(float value);
   bool ValidatePoint2D(const cv::Point2f& point);
   bool ValidatePoint3D(const cv::Point3f& point);
-  
-  // Configuration constants
-  static constexpr size_t kMaxClusters = 512;
-  static constexpr int kHistoryDepth = 10;
-  
-  // Distance and validation thresholds
-  static constexpr float kClusterMatchDistance = 0.3f;
-  static constexpr float kRedRiskDistance = 1.5f;
-  static constexpr float kYellowRiskDistance = 2.0f;
-  static constexpr float kGreenRiskDistance = 5.0f;
-  
-  // Clamping limits
-  static constexpr float kMaxCoordinate = 100.0f;
-  static constexpr float kMinCoordinate = -100.0f;
-  static constexpr float kMaxDistance = 200.0f;
-  static constexpr float kMaxZCoordinate = 10.0f;
-  static constexpr float kMinZCoordinate = -10.0f;
-  static constexpr float kMinBboxSize = 0.01f;
-  static constexpr float kMaxBboxSize = 50.0f;
-  static constexpr float kDefaultBboxSize = 0.5f;
-  static constexpr float kDefaultZHeight = 0.5f;
-  static constexpr float kMinBboxSizeForArray = 0.1f;
 };
 
 }  // namespace brother_eye

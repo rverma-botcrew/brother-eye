@@ -39,7 +39,7 @@ class ObjectTracker {
    * @brief Removes old trackers that have been lost too long
    * @param max_lost_frames Maximum frames before tracker is removed
    */
-  void CleanupOldTrackers(int max_lost_frames = 5);
+  void CleanupOldTrackers(int max_lost_frames = TrackingConstants::kMaxLostFrames);
   
   /**
    * @brief Creates a point cloud representing tracked objects
