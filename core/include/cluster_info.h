@@ -2,68 +2,118 @@
 #define CLUSTER_INFO_H_
 
 #include <opencv2/opencv.hpp>
+#include <vector>
 
 namespace brother_eye {
 
+// Risk assessment distance thresholds (in meters)
+namespace RiskThresholds {
+  constexpr float kRedRiskDistance = 1.5f;     ///< Distance threshold for red (high) risk
+  constexpr float kYellowRiskDistance = 2.0f;  ///< Distance threshold for yellow (medium) risk
+  constexpr float kGreenRiskDistance = 5.0f;   ///< Distance threshold for green (low) risk
+}
+
+// Default bounding box parameters
+namespace DefaultBoundingBox {
+  constexpr float kDefaultHeight = 0.5f;       ///< Default height center (meters)
+  constexpr float kDefaultWidth = 0.5f;        ///< Default width (meters)
+  constexpr float kDefaultDepth = 0.5f;        ///< Default depth (meters)
+  constexpr float kDefaultTotalHeight = 1.0f;  ///< Default total height (meters)
+}
+
+/**
+ * @brief Enumeration representing different risk levels for detected objects
+ * 
+ * Risk levels are used to categorize the potential threat level of detected
+ * objects in the point cloud processing pipeline.
+ */
 enum class RiskLevel { 
-  kNone = 0, 
-  kGreen = 1, 
-  kYellow = 2, 
-  kRed = 3 
+  kNone = 0,    ///< No risk detected
+  kGreen = 1,   ///< Low risk - safe distance
+  kYellow = 2,  ///< Medium risk - caution required
+  kRed = 3      ///< High risk - immediate attention required
 };
 
+/**
+ * @brief Represents information about a detected cluster/object in the point cloud
+ * 
+ * This class encapsulates all relevant information about a detected object,
+ * including its position, risk assessment, and 3D bounding box data.
+ */
 class ClusterInfo {
  public:
+  /**
+   * @brief Constructs a ClusterInfo object with centroid and ID
+   * @param centroid The 2D centroid position of the cluster
+   * @param cluster_id Unique identifier for this cluster
+   */
   ClusterInfo(const cv::Point2f& centroid, int cluster_id);
   
   // Getters
-  cv::Point2f GetCentroid() const { return centroid_; }
-  float GetDistance() const { return distance_; }
-  float GetAngle() const { return angle_; }
-  RiskLevel GetRisk() const { return risk_; }
-  int GetId() const { return id_; }
-  cv::Point3f GetBboxCenter() const { return bbox_center_; }
-  cv::Point3f GetBboxSize() const { return bbox_size_; }
+  cv::Point2f GetCentroid() const noexcept { return centroid_; }
+  float GetDistance() const noexcept { return distance_; }
+  float GetAngle() const noexcept { return angle_; }
+  RiskLevel GetRiskLevel() const noexcept { return risk_level_; }
+  int GetClusterId() const noexcept { return cluster_id_; }
+  cv::Point3f GetBoundingBoxCenter() const noexcept { return bounding_box_center_; }
+  cv::Point3f GetBoundingBoxSize() const noexcept { return bounding_box_size_; }
   
   // Setters
-  void SetBboxCenter(const cv::Point3f& center) { bbox_center_ = center; }
-  void SetBboxSize(const cv::Point3f& size) { bbox_size_ = size; }
+  void SetBoundingBoxCenter(const cv::Point3f& center) { bounding_box_center_ = center; }
+  void SetBoundingBoxSize(const cv::Point3f& size) { bounding_box_size_ = size; }
   
  private:
+  // 2D position data
   cv::Point2f centroid_;
   float distance_;
-  float angle_;  // in radians
-  RiskLevel risk_;
-  int id_;
+  float angle_;  ///< Angle in radians relative to sensor
   
-  // 3D Bounding Box data
-  cv::Point3f bbox_center_;
-  cv::Point3f bbox_size_;  // width, height, depth
+  // Classification data
+  RiskLevel risk_level_;
+  int cluster_id_;
   
+  // 3D bounding box data
+  cv::Point3f bounding_box_center_;
+  cv::Point3f bounding_box_size_;  ///< Width, height, depth
+  
+  /**
+   * @brief Calculates the risk level based on distance and other factors
+   */
   void CalculateRisk();
 };
 
+/**
+ * @brief Container class for raw cluster data during processing
+ * 
+ * This class holds intermediate data about clusters during the point cloud
+ * processing pipeline, before they are converted to ClusterInfo objects.
+ */
 class ClusterData {
  public:
   ClusterData() = default;
   
   // Getters
-  cv::Point2f GetCentroid() const { return centroid_; }
-  cv::Point3f GetBboxCenter() const { return bbox_center_; }
-  cv::Point3f GetBboxSize() const { return bbox_size_; }
-  const std::vector<int>& GetPointIndices() const { return point_indices_; }
+  cv::Point2f GetCentroid() const noexcept { return centroid_; }
+  cv::Point3f GetBoundingBoxCenter() const noexcept { return bounding_box_center_; }
+  cv::Point3f GetBoundingBoxSize() const noexcept { return bounding_box_size_; }
+  const std::vector<int>& GetPointIndices() const noexcept { return point_indices_; }
   
   // Setters
   void SetCentroid(const cv::Point2f& centroid) { centroid_ = centroid; }
-  void SetBboxCenter(const cv::Point3f& center) { bbox_center_ = center; }
-  void SetBboxSize(const cv::Point3f& size) { bbox_size_ = size; }
+  void SetBoundingBoxCenter(const cv::Point3f& center) { bounding_box_center_ = center; }
+  void SetBoundingBoxSize(const cv::Point3f& size) { bounding_box_size_ = size; }
   void AddPointIndex(int index) { point_indices_.push_back(index); }
   
  private:
+  // 2D position data
   cv::Point2f centroid_;
-  cv::Point3f bbox_center_;
-  cv::Point3f bbox_size_;
-  std::vector<int> point_indices_;
+  
+  // 3D bounding box data
+  cv::Point3f bounding_box_center_;
+  cv::Point3f bounding_box_size_;  ///< Width, height, depth
+  
+  // Point cloud indices
+  std::vector<int> point_indices_;  ///< Indices of points belonging to this cluster
 };
 
 }  // namespace brother_eye

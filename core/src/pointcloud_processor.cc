@@ -150,13 +150,13 @@ std::vector<ClusterData> PointCloudProcessor::ExtractClustersWithBoundingBoxes(c
     cluster_data.SetCentroid(cv::Point2f(sum_x / num_points, sum_y / num_points));
     
     // Calculate 3D bounding box
-    cluster_data.SetBboxCenter(cv::Point3f(
+    cluster_data.SetBoundingBoxCenter(cv::Point3f(
       (min_x + max_x) / 2.0f,
       (min_y + max_y) / 2.0f,
       (min_z + max_z) / 2.0f
     ));
     
-    cluster_data.SetBboxSize(cv::Point3f(
+    cluster_data.SetBoundingBoxSize(cv::Point3f(
       std::max(0.1f, max_x - min_x),  // Minimum 10cm width
       std::max(0.1f, max_y - min_y),  // Minimum 10cm depth
       std::max(0.1f, max_z - min_z)   // Minimum 10cm height
@@ -175,19 +175,19 @@ std::vector<ClusterInfo> PointCloudProcessor::AnalyzeClusterRisk(const std::vect
     ClusterInfo info(cluster_data[i].GetCentroid(), static_cast<int>(i));
     
     // Set bounding box information
-    info.SetBboxCenter(cluster_data[i].GetBboxCenter());
-    info.SetBboxSize(cluster_data[i].GetBboxSize());
+    info.SetBoundingBoxCenter(cluster_data[i].GetBoundingBoxCenter());
+    info.SetBoundingBoxSize(cluster_data[i].GetBoundingBoxSize());
     
     cluster_info.push_back(info);
     
     // Print cluster analysis
-    std::cout << "[FILTER] 📊 Cluster " << info.GetId() 
+    std::cout << "[FILTER] 📊 Cluster " << info.GetClusterId() 
               << " | Distance: " << std::fixed << std::setprecision(2) << info.GetDistance() << "m"
               << " | Angle: " << (info.GetAngle() * 180.0f / M_PI) << "°"
-              << " | BBox: [" << info.GetBboxSize().x << "×" << info.GetBboxSize().y << "×" << info.GetBboxSize().z << "]m"
+              << " | BBox: [" << info.GetBoundingBoxSize().x << "×" << info.GetBoundingBoxSize().y << "×" << info.GetBoundingBoxSize().z << "]m"
               << " | Risk: ";
     
-    switch (info.GetRisk()) {
+    switch (info.GetRiskLevel()) {
       case RiskLevel::kRed: std::cout << "🔴 RED"; break;
       case RiskLevel::kYellow: std::cout << "🟡 YELLOW"; break;
       case RiskLevel::kGreen: std::cout << "🟢 GREEN"; break;
@@ -283,7 +283,7 @@ void PointCloudProcessor::DisplayClusterRiskUi(const std::vector<ClusterInfo>& c
   // Draw clusters
   for (const auto& cluster : clusters) {
     cv::Scalar color;
-    switch (cluster.GetRisk()) {
+    switch (cluster.GetRiskLevel()) {
       case RiskLevel::kRed: color = cv::Scalar(0, 0, 255); break;
       case RiskLevel::kYellow: color = cv::Scalar(0, 255, 255); break;
       case RiskLevel::kGreen: color = cv::Scalar(0, 255, 0); break;
@@ -301,7 +301,7 @@ void PointCloudProcessor::DisplayClusterRiskUi(const std::vector<ClusterInfo>& c
     cv::circle(img, cluster_pos, 8, cv::Scalar(255, 255, 255), 2);
     
     // Add cluster ID text
-    cv::putText(img, std::to_string(cluster.GetId()), 
+    cv::putText(img, std::to_string(cluster.GetClusterId()), 
                 cv::Point(cluster_pos.x + 10, cluster_pos.y - 5),
                 cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255), 1);
   }

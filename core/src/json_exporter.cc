@@ -100,7 +100,7 @@ std::string JsonExporter::FormatFloat(float value, int precision) {
 std::string JsonExporter::ClusterInfoToJson(const ClusterInfo& cluster, int tracked_id, int age, int lost_frames) {
   std::ostringstream json;
   json << "    {\n";
-  json << "      \"id\": " << cluster.GetId() << ",\n";
+  json << "      \"id\": " << cluster.GetClusterId() << ",\n";
   json << "      \"tracked_id\": " << tracked_id << ",\n";
   json << "      \"centroid\": {\n";
   json << "        \"x\": " << FormatFloat(cluster.GetCentroid().x) << ",\n";
@@ -113,7 +113,7 @@ std::string JsonExporter::ClusterInfoToJson(const ClusterInfo& cluster, int trac
   // Risk level as both enum and string
   std::string risk_str;
   int risk_level = 0;
-  switch (cluster.GetRisk()) {
+  switch (cluster.GetRiskLevel()) {
     case RiskLevel::kRed: risk_str = "RED"; risk_level = 3; break;
     case RiskLevel::kYellow: risk_str = "YELLOW"; risk_level = 2; break;
     case RiskLevel::kGreen: risk_str = "GREEN"; risk_level = 1; break;
@@ -128,16 +128,16 @@ std::string JsonExporter::ClusterInfoToJson(const ClusterInfo& cluster, int trac
   // Bounding box
   json << "      \"bounding_box\": {\n";
   json << "        \"center\": {\n";
-  json << "          \"x\": " << FormatFloat(cluster.GetBboxCenter().x) << ",\n";
-  json << "          \"y\": " << FormatFloat(cluster.GetBboxCenter().y) << ",\n";
-  json << "          \"z\": " << FormatFloat(cluster.GetBboxCenter().z) << "\n";
+  json << "          \"x\": " << FormatFloat(cluster.GetBoundingBoxCenter().x) << ",\n";
+  json << "          \"y\": " << FormatFloat(cluster.GetBoundingBoxCenter().y) << ",\n";
+  json << "          \"z\": " << FormatFloat(cluster.GetBoundingBoxCenter().z) << "\n";
   json << "        },\n";
   json << "        \"size\": {\n";
-  json << "          \"width\": " << FormatFloat(cluster.GetBboxSize().x) << ",\n";
-  json << "          \"height\": " << FormatFloat(cluster.GetBboxSize().y) << ",\n";
-  json << "          \"depth\": " << FormatFloat(cluster.GetBboxSize().z) << "\n";
+  json << "          \"width\": " << FormatFloat(cluster.GetBoundingBoxSize().x) << ",\n";
+  json << "          \"height\": " << FormatFloat(cluster.GetBoundingBoxSize().y) << ",\n";
+  json << "          \"depth\": " << FormatFloat(cluster.GetBoundingBoxSize().z) << "\n";
   json << "        },\n";
-  json << "        \"volume\": " << FormatFloat(cluster.GetBboxSize().x * cluster.GetBboxSize().y * cluster.GetBboxSize().z) << "\n";
+  json << "        \"volume\": " << FormatFloat(cluster.GetBoundingBoxSize().x * cluster.GetBoundingBoxSize().y * cluster.GetBoundingBoxSize().z) << "\n";
   json << "      },\n";
   
   // Tracking information
@@ -174,7 +174,7 @@ std::string JsonExporter::GenerateStatistics(const std::vector<ClusterInfo>& clu
   float max_distance = 0.0f;
   
   for (const auto& cluster : clusters) {
-    switch (cluster.GetRisk()) {
+    switch (cluster.GetRiskLevel()) {
       case RiskLevel::kRed: red_count++; break;
       case RiskLevel::kYellow: yellow_count++; break;
       case RiskLevel::kGreen: green_count++; break;

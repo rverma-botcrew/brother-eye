@@ -224,9 +224,9 @@ DDSClusterArray DdsPublisher::ConvertToClusterArray(const std::vector<ClusterInf
     // Try to find matching cluster info for bounding box data
     for (const auto& cluster : clusters) {
       if (cv::norm(cluster.GetCentroid() - tracked_obj.GetLastCentroid()) < kClusterMatchDistance) {
-        if (ValidatePoint3D(cluster.GetBboxCenter()) && ValidatePoint3D(cluster.GetBboxSize())) {
-          bbox_center = cluster.GetBboxCenter();
-          bbox_size = cluster.GetBboxSize();
+        if (ValidatePoint3D(cluster.GetBoundingBoxCenter()) && ValidatePoint3D(cluster.GetBoundingBoxSize())) {
+          bbox_center = cluster.GetBoundingBoxCenter();
+          bbox_size = cluster.GetBoundingBoxSize();
         }
         break;
       }
@@ -291,7 +291,7 @@ DDSBoundingBoxArray DdsPublisher::ConvertToBoundingBoxArray(const std::vector<Cl
     DDSBoundingBox3D& bounding_box = bbox_array_msg.boxes()[cluster_index];
     
     // Validate cluster bounding box data
-    if (!ValidatePoint3D(cluster.GetBboxCenter()) || !ValidatePoint3D(cluster.GetBboxSize())) {
+    if (!ValidatePoint3D(cluster.GetBoundingBoxCenter()) || !ValidatePoint3D(cluster.GetBoundingBoxSize())) {
       std::cerr << "[FILTER] ⚠️ Invalid bounding box for cluster " << cluster_index << ", using defaults\n";
       // Set default center position
       bounding_box.center().position().x(cluster.GetCentroid().x);
@@ -304,14 +304,14 @@ DDSBoundingBoxArray DdsPublisher::ConvertToBoundingBoxArray(const std::vector<Cl
       bounding_box.size().z(1.0f);
     } else {
       // Set center position
-      bounding_box.center().position().x(cluster.GetBboxCenter().x);
-      bounding_box.center().position().y(cluster.GetBboxCenter().y);
-      bounding_box.center().position().z(cluster.GetBboxCenter().z);
+      bounding_box.center().position().x(cluster.GetBoundingBoxCenter().x);
+      bounding_box.center().position().y(cluster.GetBoundingBoxCenter().y);
+      bounding_box.center().position().z(cluster.GetBoundingBoxCenter().z);
       
       // Set size with minimum bounds
-      bounding_box.size().x(std::max(kMinBboxSizeForArray, cluster.GetBboxSize().x));
-      bounding_box.size().y(std::max(kMinBboxSizeForArray, cluster.GetBboxSize().y));
-      bounding_box.size().z(std::max(kMinBboxSizeForArray, cluster.GetBboxSize().z));
+      bounding_box.size().x(std::max(kMinBboxSizeForArray, cluster.GetBoundingBoxSize().x));
+      bounding_box.size().y(std::max(kMinBboxSizeForArray, cluster.GetBoundingBoxSize().y));
+      bounding_box.size().z(std::max(kMinBboxSizeForArray, cluster.GetBoundingBoxSize().z));
     }
     
     // Set orientation (identity quaternion for axis-aligned boxes)
