@@ -6,6 +6,7 @@
 #include "pointcloud_processor.hpp"
 #include "json_exporter.hpp"
 #include "dds_publisher.hpp"
+#include "constants.hpp"
 
 namespace {
 static bool g_running = true;
@@ -33,8 +34,8 @@ int main() {
     // Main processing loop
     while (g_running) {
       auto samples = dds_publisher.GetReader()->take();
-      if (samples.length() == 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      if (samples.length() == brother_eye::DataConversionConstants::kZeroPointCount) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(brother_eye::SystemConstants::kMainLoopDelayMs));
         continue;
       }
 
@@ -43,29 +44,23 @@ int main() {
           continue;
         }
         
-        processor.IncrementFrameCount();
         const auto& input_msg = sample.data();
         std::cout << "[MAIN] 📦 Frame #" << processor.GetFrameCount()
                   << " | Points = " << input_msg.data().size() / input_msg.point_step() << std::endl;
 
-        // Process point cloud
+        // Process point cloud using refactored method
+        auto tracked_cloud = processor.ProcessPointCloud(input_msg);
+        
+        // Get cluster data and analysis using separate methods
         auto cloud_raw = processor.ConvertToPcl(input_msg);
         auto cleaned = processor.CleanCloud(cloud_raw);
         auto cluster_data = processor.ExtractClustersWithBoundingBoxes(cleaned);
         
-        // Extract centroids for tracking
+        // Extract centroids for tracking (this is now done internally but we need it for analysis)
         std::vector<cv::Point2f> centroids;
         for (const auto& data : cluster_data) {
           centroids.push_back(data.GetCentroid());
         }
-        
-        // Update tracking
-        processor.UpdateTracking(centroids);
-        processor.CleanupOldTrackers();
-        
-        // Create tracked point cloud
-        auto tracked_cloud = processor.CreateTrackedPointCloud();
-        
         // Analyze cluster risk
         auto cluster_analysis = processor.AnalyzeClusterRisk(cluster_data);
         processor.DisplayClusterRiskUi(cluster_analysis);
@@ -83,20 +78,18 @@ int main() {
         dds_publisher.PublishClusterAnalysis(cluster_analysis, processor.GetTrackedObjects());
         dds_publisher.PublishBoundingBoxes(cluster_analysis);
         
-        processor.IncrementFrameCount();
-        
         std::cout << "[MAIN] ✅ Frame processing complete\n";
       }
     }
     
   } catch (const std::exception& e) {
     std::cerr << "[MAIN] ❌ Exception: " << e.what() << std::endl;
-    return 1;
+    return brother_eye::SystemConstants::kErrorExitCode;
   } catch (...) {
     std::cerr << "[MAIN] ❌ Unknown exception occurred\n";
-    return 1;
+    return brother_eye::SystemConstants::kErrorExitCode;
   }
 
   std::cout << "[MAIN] 👋 Shutdown complete.\n";
-  return 0;
+  return brother_eye::SystemConstants::kSuccessExitCode;
 }

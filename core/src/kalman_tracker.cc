@@ -1,4 +1,5 @@
 #include "kalman_tracker.hpp"
+#include "constants.hpp"
 #include <iostream>
 
 namespace brother_eye {
@@ -14,11 +15,11 @@ KalmanTracker::KalmanTracker()
 void KalmanTracker::InitializeMatrices() {
   // Transition matrix for constant velocity model
   // State: [x, y, vx, vy] -> [x+vx, y+vy, vx, vy]
-  kalman_filter_.transitionMatrix = (cv::Mat_<float>(4, 4) <<
-    1, 0, 1, 0,   // x_new = x + vx
-    0, 1, 0, 1,   // y_new = y + vy
-    0, 0, 1, 0,   // vx_new = vx
-    0, 0, 0, 1    // vy_new = vy
+  kalman_filter_.transitionMatrix = (cv::Mat_<float>(TrackingConstants::kKalmanStateSize, TrackingConstants::kKalmanStateSize) <<
+    TrackingConstants::kKalmanTransitionValue, TrackingConstants::kKalmanZeroValue, TrackingConstants::kKalmanVelocityValue, TrackingConstants::kKalmanZeroValue,   // x_new = x + vx
+    TrackingConstants::kKalmanZeroValue, TrackingConstants::kKalmanTransitionValue, TrackingConstants::kKalmanZeroValue, TrackingConstants::kKalmanVelocityValue,   // y_new = y + vy
+    TrackingConstants::kKalmanZeroValue, TrackingConstants::kKalmanZeroValue, TrackingConstants::kKalmanTransitionValue, TrackingConstants::kKalmanZeroValue,   // vx_new = vx
+    TrackingConstants::kKalmanZeroValue, TrackingConstants::kKalmanZeroValue, TrackingConstants::kKalmanZeroValue, TrackingConstants::kKalmanTransitionValue    // vy_new = vy
   );
   
   // Measurement matrix - we only observe position [x, y]
@@ -37,8 +38,8 @@ void KalmanTracker::InitializeMatrices() {
 
 cv::Point2f KalmanTracker::Update(const cv::Point2f& point) {
   // Set measurement values
-  measurement_.at<float>(0) = point.x;
-  measurement_.at<float>(1) = point.y;
+  measurement_.at<float>(DataConversionConstants::kXFieldIndex) = point.x;
+  measurement_.at<float>(DataConversionConstants::kYFieldIndex) = point.y;
   
   // Correct the state with the measurement
   kalman_filter_.correct(measurement_);
@@ -46,20 +47,20 @@ cv::Point2f KalmanTracker::Update(const cv::Point2f& point) {
   // Predict the next state
   const cv::Mat prediction = kalman_filter_.predict();
   
-  return cv::Point2f(prediction.at<float>(0), prediction.at<float>(1));
+  return cv::Point2f(prediction.at<float>(DataConversionConstants::kXFieldIndex), prediction.at<float>(DataConversionConstants::kYFieldIndex));
 }
 
 cv::Point2f KalmanTracker::Predict() {
   const cv::Mat prediction = kalman_filter_.predict();
-  return cv::Point2f(prediction.at<float>(0), prediction.at<float>(1));
+  return cv::Point2f(prediction.at<float>(DataConversionConstants::kXFieldIndex), prediction.at<float>(DataConversionConstants::kYFieldIndex));
 }
 
 TrackedObject::TrackedObject(const cv::Point2f& initial_position)
     : kalman_filter_(), 
       last_centroid_(initial_position), 
       predicted_position_(initial_position),
-      age_(0), 
-      lost_frames_(0), 
+      age_(TrackingConstants::kInitialAge), 
+      lost_frames_(TrackingConstants::kInitialLostFrames), 
       active_(true) {
   
   // Initialize the Kalman filter with the first measurement
@@ -72,7 +73,7 @@ void TrackedObject::Update(const cv::Point2f& new_position) {
   last_centroid_ = new_position;
   
   // Reset lost frames counter and increment age
-  lost_frames_ = 0;
+  lost_frames_ = TrackingConstants::kResetLostFrames;
   ++age_;
 }
 

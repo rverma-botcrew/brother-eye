@@ -1,4 +1,5 @@
 #include "dds_publisher.hpp"
+#include "constants.hpp"
 
 #include <iostream>
 #include <algorithm>
@@ -35,7 +36,7 @@ void SafeWrite(const std::shared_ptr<WriterType>& writer, const MessageType& msg
 }
 
 DdsPublisher::DdsPublisher() 
-    : domain_participant_(0),
+    : domain_participant_(DdsConstants::kDefaultDomainId),
       input_topic_(domain_participant_, "dds_raw_points"),
       output_topic_(domain_participant_, "dds_clustered_points"),
       cluster_topic_(domain_participant_, "dds_cluster_analysis"),
@@ -79,14 +80,14 @@ void DdsPublisher::PublishPointCloud(const CloudT::Ptr& cloud, const DDSPointClo
   }
 
   // Bail out if prototype is invalid
-  if (prototype.point_step() == 0) {
+  if (prototype.point_step() == DataConversionConstants::kZeroPointStep) {
     std::cerr << "[FILTER] ❌ Invalid prototype: point_step=0\n";
     return;
   }
 
   DDSPointCloud2 output_msg = prototype;
   output_msg.width(cloud->points.size());
-  output_msg.height(1);
+  output_msg.height(DataConversionConstants::kPointCloudHeight);
   output_msg.row_step(output_msg.point_step() * output_msg.width());
   output_msg.is_dense(false);
   output_msg.data().resize(output_msg.row_step());
@@ -96,10 +97,10 @@ void DdsPublisher::PublishPointCloud(const CloudT::Ptr& cloud, const DDSPointClo
   for (size_t i = 0; i < cloud->points.size(); ++i) {
     float* point_data = reinterpret_cast<float*>(data_ptr + i * output_msg.point_step());
     const auto& point = cloud->points[i];
-    point_data[0] = point.x;
-    point_data[1] = point.y;
-    point_data[2] = point.z;
-    point_data[3] = point.intensity;
+    point_data[DataConversionConstants::kXFieldIndex] = point.x;
+    point_data[DataConversionConstants::kYFieldIndex] = point.y;
+    point_data[DataConversionConstants::kZFieldIndex] = point.z;
+    point_data[DataConversionConstants::kIntensityFieldIndex] = point.intensity;
   }
 
   SafeWrite(writer_, output_msg, "point cloud");
@@ -157,7 +158,7 @@ DDSClusterArray DdsPublisher::ConvertToClusterArray(const std::vector<ClusterInf
     }
     
     // Validate object age and lost_frames (should be non-negative)
-    if (obj.GetAge() < 0 || obj.GetLostFrames() < 0) {
+    if (obj.GetAge() < TrackingConstants::kInitialAge || obj.GetLostFrames() < TrackingConstants::kInitialLostFrames) {
       std::cerr << "[FILTER] ⚠️ Invalid age/lost_frames for cluster " << id 
                 << " [age=" << obj.GetAge() << ", lost=" << obj.GetLostFrames() << "], skipping\n";
       continue;
@@ -170,12 +171,12 @@ DDSClusterArray DdsPublisher::ConvertToClusterArray(const std::vector<ClusterInf
   
   if (valid_objects.empty()) {
     std::cout << "[FILTER] ⚠️ No valid clusters to publish\n";
-    msg.clusters().resize(0);
+    msg.clusters().resize(DdsConstants::kEmptyClusterSize);
     return msg;
   }
   
   msg.clusters().resize(valid_objects.size());
-  size_t cluster_index = 0;
+  size_t cluster_index = TrackingConstants::kInitialObjectId;
   
   for (const auto& [tracked_id, tracked_obj] : valid_objects) {
     std::cout << "[FILTER] 🔍 Processing cluster " << tracked_id << " at index " << cluster_index << "\n";
@@ -203,17 +204,17 @@ DDSClusterArray DdsPublisher::ConvertToClusterArray(const std::vector<ClusterInf
     dds_cluster.distance(distance);
     dds_cluster.angle(angle);
     dds_cluster.id(tracked_id);
-    dds_cluster.age(std::max(0, tracked_obj.GetAge()));
-    dds_cluster.lost_frames(std::max(0, tracked_obj.GetLostFrames()));
+    dds_cluster.age(std::max(TrackingConstants::kInitialAge, tracked_obj.GetAge()));
+    dds_cluster.lost_frames(std::max(TrackingConstants::kInitialLostFrames, tracked_obj.GetLostFrames()));
     
     // Set risk level based on distance thresholds
-    uint8_t risk_level = 0;  // NONE
+    uint8_t risk_level = JsonConstants::kNoneRiskLevel;  // NONE
     if (distance < kRedRiskDistance) {
-      risk_level = 3;  // RED
+      risk_level = JsonConstants::kRedRiskLevel;  // RED
     } else if (distance < kYellowRiskDistance) {
-      risk_level = 2;  // YELLOW
+      risk_level = JsonConstants::kYellowRiskLevel;  // YELLOW
     } else if (distance < kGreenRiskDistance) {
-      risk_level = 1;  // GREEN
+      risk_level = JsonConstants::kGreenRiskLevel;  // GREEN
     }
     dds_cluster.risk_level(risk_level);
     

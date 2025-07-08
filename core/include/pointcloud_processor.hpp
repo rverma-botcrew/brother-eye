@@ -9,6 +9,13 @@
 #include <memory>
 #include <set>
 
+// Include modular filters and analyzers
+#include "pointcloud_filters.hpp"
+#include "cluster_analyzer.hpp"
+#include "object_tracker.hpp"
+#include "cluster_visualizer.hpp"
+#include "data_converter.hpp"
+
 #include "cluster_info.hpp"
 #include "kalman_tracker.hpp"
 #include "dds_pcl.hpp"
@@ -60,11 +67,9 @@ namespace VisualizationConfig {
 /**
  * @brief Main point cloud processing pipeline
  * 
- * This class handles the complete point cloud processing workflow including:
- * - Point cloud conversion and filtering
- * - Cluster extraction with bounding boxes
- * - Risk analysis and tracking
- * - Visualization and output generation
+ * This class orchestrates the complete point cloud processing workflow by
+ * coordinating modular components for filtering, clustering, tracking, and visualization.
+ * The actual processing is delegated to specialized modules for better maintainability.
  */
 class PointCloudProcessor {
  public:
@@ -94,7 +99,7 @@ class PointCloudProcessor {
   CloudT::Ptr ProcessPointCloud(const DDSPointCloud2& input_msg);
   
   // ============================================================================
-  // Individual Processing Steps
+  // Individual Processing Steps (mostly delegated to modular components)
   // ============================================================================
   
   /**
@@ -119,15 +124,11 @@ class PointCloudProcessor {
   std::vector<ClusterData> ExtractClustersWithBoundingBoxes(const CloudT::Ptr& cloud);
   
   /**
-   * @brief Analyzes cluster risk levels and prints information
+   * @brief Analyzes cluster risk levels
    * @param cluster_data Vector of cluster data
    * @return Vector of cluster information with risk analysis
    */
   std::vector<ClusterInfo> AnalyzeClusterRisk(const std::vector<ClusterData>& cluster_data);
-  
-  // ============================================================================
-  // Tracking Functionality
-  // ============================================================================
   
   /**
    * @brief Updates object tracking with new centroid positions
@@ -164,9 +165,7 @@ class PointCloudProcessor {
    * @brief Gets the currently tracked objects
    * @return Const reference to tracked objects map
    */
-  const std::map<int, TrackedObject>& GetTrackedObjects() const noexcept { 
-    return tracked_objects_; 
-  }
+  const std::map<int, TrackedObject>& GetTrackedObjects() const noexcept;
   
   /**
    * @brief Gets the current frame count
@@ -183,81 +182,13 @@ class PointCloudProcessor {
     ++frame_count_; 
   }
   
-  
  private:
   // ============================================================================
   // Member Variables
   // ============================================================================
   
-  std::map<int, TrackedObject> tracked_objects_;  ///< Currently tracked objects
-  int next_id_;                                   ///< Next available object ID
-  size_t frame_count_;                            ///< Current frame counter
-  
-  // ============================================================================
-  // Private Helper Methods
-  // ============================================================================
-  
-  /**
-   * @brief Applies voxel grid filtering to reduce point density
-   * @param cloud Input point cloud
-   * @return Voxel-filtered point cloud
-   */
-  CloudT::Ptr ApplyVoxelFiltering(const CloudT::Ptr& cloud);
-  
-  /**
-   * @brief Applies pass-through filtering to remove points outside Z range
-   * @param cloud Input point cloud
-   * @return Range-filtered point cloud
-   */
-  CloudT::Ptr ApplyRangeFiltering(const CloudT::Ptr& cloud);
-  
-  /**
-   * @brief Removes ground plane using RANSAC plane segmentation
-   * @param cloud Input point cloud
-   * @return Point cloud with ground plane removed
-   */
-  CloudT::Ptr RemoveGroundPlane(const CloudT::Ptr& cloud);
-  
-  /**
-   * @brief Removes statistical outliers from point cloud
-   * @param cloud Input point cloud
-   * @return Point cloud with outliers removed
-   */
-  CloudT::Ptr RemoveStatisticalOutliers(const CloudT::Ptr& cloud);
-  
-  /**
-   * @brief Calculates bounding box for a cluster
-   * @param cloud Point cloud
-   * @param indices Point indices belonging to the cluster
-   * @param cluster_data Output cluster data to populate
-   */
-  void CalculateClusterBoundingBox(const CloudT::Ptr& cloud, 
-                                   const std::vector<int>& indices,
-                                   ClusterData& cluster_data);
-  
-  /**
-   * @brief Draws the grid and reference lines for visualization
-   * @param img Output image to draw on
-   * @param center Center point of the display
-   * @param radius Display radius
-   */
-  void DrawVisualizationGrid(cv::Mat& img, const cv::Point& center, int radius);
-  
-  /**
-   * @brief Draws a single cluster on the visualization
-   * @param img Output image to draw on
-   * @param cluster Cluster information
-   * @param center Center point of the display
-   * @param radius Display radius
-   */
-  void DrawCluster(cv::Mat& img, const ClusterInfo& cluster, 
-                   const cv::Point& center, int radius);
-
-  /**
-   * @brief Calculates adaptive threshold for object matching
-   * @return Adaptive threshold value based on current tracker count
-   */
-  float CalculateAdaptiveThreshold() const;
+  std::unique_ptr<ObjectTracker> object_tracker_;  ///< Object tracking component
+  size_t frame_count_;                             ///< Current frame counter
 };
 
 }  // namespace brother_eye

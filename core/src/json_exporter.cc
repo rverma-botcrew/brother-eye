@@ -1,4 +1,5 @@
 #include "json_exporter.hpp"
+#include "constants.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -37,12 +38,12 @@ std::string JsonExporter::ClustersToJson(const std::vector<ClusterInfo>& cluster
     const auto& cluster = clusters[i];
     
     // Find matching tracked object
-    int tracked_id = -1;
-    int age = 0;
-    int lost_frames = 0;
+    int tracked_id = JsonConstants::kInvalidTrackingId;
+    int age = JsonConstants::kInitialAge;
+    int lost_frames = JsonConstants::kInitialLostFrames;
     
     for (const auto& [id, obj] : tracked_objects) {
-      if (cv::norm(cluster.GetCentroid() - obj.GetLastCentroid()) < JsonExportConfig::kClusterMatchThreshold) {
+      if (cv::norm(cluster.GetCentroid() - obj.GetLastCentroid()) < JsonConstants::kClusterMatchThreshold) {
         tracked_id = id;
         age = obj.GetAge();
         lost_frames = obj.GetLostFrames();

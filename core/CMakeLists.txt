@@ -27,6 +27,12 @@ set(SOURCES
     src/pointcloud_processor.cc
     src/json_exporter.cc
     src/dds_publisher.cc
+    # New modular components
+    src/pointcloud_filters.cc
+    src/cluster_analyzer.cc
+    src/object_tracker.cc
+    src/cluster_visualizer.cc
+    src/data_converter.cc
     ${GEN_DIR}/dds_pcl.cpp
 )
 
