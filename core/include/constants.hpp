@@ -1,4 +1,5 @@
-#pragma once
+#ifndef CONSTANTS_HPP_
+#define CONSTANTS_HPP_
 
 #include <cmath>
 #include <opencv2/opencv.hpp>
@@ -272,3 +273,4 @@ namespace SystemConstants {
 }
 
 }  // namespace brother_eye
+#endif  // CONSTANTS_HPP_
